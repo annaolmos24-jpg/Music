@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Tunesmith Studio</title>
+  <meta name="description" content="Write, generate, remix and master AI songs with your Suno API key." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b5cf6'/%3E%3Cstop offset='1' stop-color='%23ec4899'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M26 44a6 6 0 1 1-4-5.7V18l20-5v24a6 6 0 1 1-4-5.7V20.5l-12 3V44z' fill='white'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    (function () {
+      var pref = "system";
+      try { pref = localStorage.getItem("ts.theme") || "system"; } catch (e) {}
+      var dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme-pref", pref);
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ============ KEY GATE ============ -->
+  <section id="gate" class="gate" aria-labelledby="gate-title">
+    <div class="gate-bg" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+    <div class="gate-theme" data-theme-switch></div>
+    <div class="gate-card">
+      <div class="brand brand-lg">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18a3 3 0 1 1-2-2.83V5l12-3v13a3 3 0 1 1-2-2.83V6.56l-8 2V18z"/></svg></span>
+        <span>Tunesmith<small>Studio</small></span>
+      </div>
+      <h1 id="gate-title">Turn any idea into a finished song.</h1>
+      <p class="lede">Describe a vibe, write your own lyrics, or upload a melody. Tunesmith drives the Suno API to compose, remix, split stems, and even make the music video.</p>
+
+      <ol class="gate-steps">
+        <li><b>1</b><span>Get a key at <a href="https://sunoapi.org/api-key" target="_blank" rel="noopener">sunoapi.org/api-key</a></span></li>
+        <li><b>2</b><span>Paste it below to unlock the studio</span></li>
+        <li><b>3</b><span>Make something loud</span></li>
+      </ol>
+
+      <form id="gate-form" class="gate-form" autocomplete="off">
+        <label for="gate-key" class="label">Suno API key</label>
+        <div class="input-group">
+          <input id="gate-key" type="password" class="input" placeholder="Paste your API key" spellcheck="false" required />
+          <button type="button" class="icon-btn" id="gate-reveal" aria-label="Show key" title="Show key">
+            <svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
+          </button>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="gate-remember" checked />
+          <span>Remember on this device</span>
+        </label>
+        <p id="gate-error" class="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="gate-submit">
+          <span class="btn-label">Unlock the studio</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+        <p class="fine">Your key stays in your browser and is only sent to the Suno API. We check it by reading your credit balance, which is free.</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18a3 3 0 1 1-2-2.83V5l12-3v13a3 3 0 1 1-2-2.83V6.56l-8 2V18z"/></svg></span>
+        <span>Tunesmith</span>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Studio sections">
+        <a href="#create" role="tab" data-tab="create"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg><span>Create</span></a>
+        <a href="#lyrics" role="tab" data-tab="lyrics"><svg viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 4h10v2H4zm0 4h16v2H4zm0 4h10v2H4z"/></svg><span>Lyrics</span></a>
+        <a href="#remix" role="tab" data-tab="remix"><svg viewBox="0 0 24 24"><path d="M7 7h10l-3-3 1.4-1.4L21 8l-5.6 5.4L14 12l3-3H7zm10 10H7l3 3-1.4 1.4L3 16l5.6-5.4L10 12l-3 3h10z"/></svg><span>Remix</span></a>
+        <a href="#sounds" role="tab" data-tab="sounds"><svg viewBox="0 0 24 24"><path d="M3 10h2v4H3zm4-3h2v10H7zm4-4h2v18h-2zm4 4h2v10h-2zm4 3h2v4h-2z"/></svg><span>Sounds</span></a>
+        <a href="#library" role="tab" data-tab="library"><svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zm6 0h4v16h-4zm5.6.6 3.8-1.3 5 15-3.8 1.3z"/></svg><span>Library</span><em class="count" id="lib-count">0</em></a>
+      </nav>
+      <div class="topbar-right">
+        <button class="pill credits" id="credits-btn" title="Remaining credits — click to refresh">
+          <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-2h2zm0-4h-2V7h2z" opacity=".0"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v10M9 9.5c0-1 1.3-1.8 3-1.8s3 .8 3 1.8-1.3 1.6-3 1.8-3 .9-3 2 1.3 1.9 3 1.9 3-.8 3-1.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span id="credits-val">—</span>
+        </button>
+        <button class="icon-btn jobs-btn" id="jobs-btn" aria-label="Open activity" title="Activity">
+          <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 10.4 3.5 2.1-1 1.7L11 13V6h2z"/></svg>
+          <em class="badge" id="jobs-badge" hidden>0</em>
+        </button>
+        <div data-theme-switch></div>
+        <button class="icon-btn" id="settings-btn" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.2h-4l-.4 2.7a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- ============ CREATE ============ -->
+      <section class="view" id="view-create" data-view="create">
+        <div class="view-head">
+          <div>
+            <h2>What are we making today?</h2>
+            <p class="muted">Start with a vibe, or switch to Custom for full control over lyrics, style and sound.</p>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="Creation mode" id="create-mode">
+            <button type="button" role="radio" data-value="simple" aria-checked="true">✨ Simple</button>
+            <button type="button" role="radio" data-value="custom" aria-checked="false">🎛️ Custom</button>
+          </div>
+        </div>
+
+        <div class="create-grid">
+          <form id="create-form" class="card create-card" novalidate>
+            <!-- SIMPLE -->
+            <div class="mode-simple">
+              <div class="field">
+                <div class="field-top">
+                  <label class="label" for="c-idea">Describe your song</label>
+                  <button type="button" class="link-btn" id="surprise-btn">🎲 Surprise me</button>
+                </div>
+                <textarea id="c-idea" class="input textarea-lg" rows="4" maxlength="3000" placeholder="A sun-soaked indie pop anthem about driving to the coast with your best friends, windows down…"></textarea>
+                <div class="field-foot"><span class="hint">We write the lyrics for you.</span><span class="counter" data-for="c-idea"></span></div>
+              </div>
+            </div>
+
+            <!-- CUSTOM -->
+            <div class="mode-custom">
+              <div class="field">
+                <label class="label" for="c-title">Title <span class="opt">optional</span></label>
+                <input id="c-title" class="input" maxlength="80" placeholder="Name your track" />
+              </div>
+              <div class="field" data-hide-instrumental>
+                <div class="field-top">
+                  <label class="label" for="c-lyrics">Lyrics</label>
+                  <div class="field-actions">
+                    <button type="button" class="link-btn" data-insert-tag>[Verse]</button>
+                    <button type="button" class="link-btn" data-insert-tag>[Chorus]</button>
+                    <button type="button" class="link-btn" data-insert-tag>[Bridge]</button>
+                    <button type="button" class="chip chip-ai" id="write-lyrics-btn">✍️ Write with AI</button>
+                  </div>
+                </div>
+                <textarea id="c-lyrics" class="input mono" rows="9" maxlength="5000" placeholder="[Verse]&#10;Streetlights hum a quiet tune&#10;&#10;[Chorus]&#10;…"></textarea>
+                <div class="field-foot"><span class="hint">Use tags like [Verse], [Chorus], [Bridge] to shape the song.</span><span class="counter" data-for="c-lyrics"></span></div>
+              </div>
+            </div>
+
+            <!-- SHARED: style -->
+            <div class="field">
+              <div class="field-top">
+                <label class="label" for="c-style">Style <span class="opt mode-simple-inline">optional</span></label>
+                <button type="button" class="chip chip-ai" id="boost-btn" title="Let AI expand your style into a richer description">🚀 Boost style</button>
+              </div>
+              <input id="c-style" class="input" maxlength="1000" placeholder="e.g. indie pop, jangly guitars, warm analog synths, 118 bpm" />
+              <div class="chips" id="style-chips" aria-label="Style ideas"></div>
+              <div class="field-foot"><span class="hint">Tap chips to add genres and moods.</span><span class="counter" data-for="c-style"></span></div>
+            </div>
+
+            <div class="row-2">
+              <label class="toggle">
+                <input type="checkbox" id="c-instrumental" />
+                <span class="toggle-ui" aria-hidden="true"></span>
+                <span><b>Instrumental</b><small>No vocals</small></span>
+              </label>
+              <div class="field mode-custom" data-hide-instrumental>
+                <span class="label">Voice</span>
+                <div class="seg seg-sm" role="radiogroup" id="c-vocal">
+                  <button type="button" role="radio" data-value="" aria-checked="true">Any</button>
+                  <button type="button" role="radio" data-value="f" aria-checked="false">Female</button>
+                  <button type="button" role="radio" data-value="m" aria-checked="false">Male</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- MODEL -->
+            <div class="field">
+              <div class="field-top">
+                <span class="label">Model</span>
+                <button type="button" class="link-btn" id="legacy-toggle" aria-expanded="false">Show legacy models</button>
+              </div>
+              <div class="models" id="model-picker" role="radiogroup" aria-label="Model"></div>
+            </div>
+
+            <!-- SIMPLE: references -->
+            <details class="disclosure mode-simple">
+              <summary><span>🎞️ Reference media</span><small>Inspire the song with images, a video or audio</small></summary>
+              <div class="disclosure-body">
+                <p class="hint">Up to 5 images, 1 video (≤ 241s) and audio clips (6s – 30min). Upload a file or paste a public URL.</p>
+                <div class="refs" id="refs"></div>
+                <div class="ref-add">
+                  <input class="input" id="ref-url" placeholder="https://… image, video or audio URL" />
+                  <button type="button" class="btn" id="ref-add-url">Add URL</button>
+                  <label class="btn btn-ghost">
+                    <input type="file" id="ref-file" accept="image/*,video/*,audio/*" hidden />Upload file
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <!-- CUSTOM: advanced -->
+            <details class="disclosure mode-custom" id="adv-details">
+              <summary><span>🎚️ Advanced controls</span><small>Negative tags, duration, persona and fine-tuning</small></summary>
+              <div class="disclosure-body">
+                <div class="field">
+                  <label class="label" for="c-negative">Avoid these styles <span class="opt">optional</span></label>
+                  <input id="c-negative" class="input" maxlength="1000" placeholder="e.g. heavy metal, autotune, harsh drums" />
+                </div>
+                <div class="field" id="duration-field">
+                  <label class="toggle toggle-inline">
+                    <input type="checkbox" id="c-duration-on" />
+                    <span class="toggle-ui" aria-hidden="true"></span>
+                    <span><b>Set length</b></span>
+                  </label>
+                  <div class="slider-row">
+                    <input type="range" id="c-duration" min="10" max="360" step="5" value="120" disabled />
+                    <output id="c-duration-out">2:00</output>
+                  </div>
+                  <p class="hint">10 s – 6 min. Available on V6-series and V5.5 models.</p>
+                </div>
+                <div class="field">
+                  <label class="label" for="c-persona">Persona <span class="opt">optional</span></label>
+                  <select id="c-persona" class="input"></select>
+                  <p class="hint">Reuse the voice & style of a track you love. Create personas from any track in your Library.</p>
+                </div>
+                <label class="toggle toggle-inline">
+                  <input type="checkbox" id="c-finetune" />
+                  <span class="toggle-ui" aria-hidden="true"></span>
+                  <span><b>Fine-tune</b><small>Style weight, weirdness, audio weight & variety</small></span>
+                </label>
+                <div class="finetune" id="finetune" hidden>
+                  <div class="slider-field"><label for="c-styleWeight">Style adherence</label><input type="range" id="c-styleWeight" min="0" max="1" step="0.01" value="0.65" /><output>0.65</output></div>
+                  <div class="slider-field"><label for="c-weirdness">Weirdness</label><input type="range" id="c-weirdness" min="0" max="1" step="0.01" value="0.5" /><output>0.50</output></div>
+                  <div class="slider-field" data-hide-instrumental><label for="c-audioWeight">Audio weight</label><input type="range" id="c-audioWeight" min="0" max="1" step="0.01" value="0.65" /><output>0.65</output></div>
+                  <div class="slider-field"><label for="c-variety">Variety</label><input type="range" id="c-variety" min="0" max="4" step="1" value="1" /><output>Normal</output></div>
+                </div>
+              </div>
+            </details>
+
+            <p class="form-error" id="create-error" role="alert" hidden></p>
+            <div class="create-submit">
+              <button type="submit" class="btn btn-primary btn-lg btn-glow" id="create-submit">
+                <span class="btn-label">🎵 Create song</span><span class="spinner" aria-hidden="true"></span>
+              </button>
+              <span class="hint">Each request makes <b>2 variations</b>. Files are kept by Suno for 14 days — download your favourites.</span>
+            </div>
+          </form>
+
+          <aside class="create-side">
+            <div class="card now-cooking" id="now-cooking">
+              <h3>In the studio</h3>
+              <div id="cooking-list" class="job-list"></div>
+              <div class="empty-mini" id="cooking-empty">
+                <div class="eq eq-idle" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                <p>Your songs will appear here as they're written, streamed and mastered.</p>
+              </div>
+            </div>
+            <div class="card tips">
+              <h3>Studio tips</h3>
+              <ul>
+                <li><b>Be specific.</b> Genre + mood + instruments + tempo beats a single word.</li>
+                <li><b>Stream early.</b> You can play the first take in ~30 seconds, before it finishes mastering.</li>
+                <li><b>Keep going.</b> Extend a track, swap a section, split stems or make a video from the Library.</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ LYRICS ============ -->
+      <section class="view" id="view-lyrics" data-view="lyrics" hidden>
+        <div class="view-head">
+          <div>
+            <h2>Lyrics Lab</h2>
+            <p class="muted">Get a few takes on your theme, then send your favourite straight into a song.</p>
+          </div>
+        </div>
+        <form id="lyrics-form" class="card lyrics-card" novalidate>
+          <div class="field">
+            <label class="label" for="l-prompt">What should the song be about?</label>
+            <textarea id="l-prompt" class="input" rows="3" maxlength="200" placeholder="A bittersweet goodbye to a city you grew up in, nostalgic but hopeful"></textarea>
+            <div class="field-foot"><span class="hint">Themes, mood, and structure help. Max 200 characters.</span><span class="counter" data-for="l-prompt"></span></div>
+          </div>
+          <div class="chips" id="lyric-chips"></div>
+          <p class="form-error" id="lyrics-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary" id="lyrics-submit"><span class="btn-label">✍️ Write lyrics</span><span class="spinner" aria-hidden="true"></span></button>
+        </form>
+        <div id="lyrics-results" class="lyrics-results"></div>
+      </section>
+
+      <!-- ============ REMIX ============ -->
+      <section class="view" id="view-remix" data-view="remix" hidden>
+        <div class="view-head">
+          <div>
+            <h2>Remix Studio</h2>
+            <p class="muted">Bring your own audio. Cover it in a new style, extend it, add vocals or a band, or mash two songs together.</p>
+          </div>
+        </div>
+        <div class="remix-modes" id="remix-modes" role="radiogroup" aria-label="Remix type"></div>
+        <form id="remix-form" class="card" novalidate>
+          <div id="remix-sources"></div>
+          <div id="remix-fields"></div>
+          <p class="form-error" id="remix-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary btn-lg" id="remix-submit"><span class="btn-label">Start remix</span><span class="spinner" aria-hidden="true"></span></button>
+        </form>
+      </section>
+
+      <!-- ============ SOUNDS ============ -->
+      <section class="view" id="view-sounds" data-view="sounds" hidden>
+        <div class="view-head">
+          <div>
+            <h2>Sound Lab</h2>
+            <p class="muted">Loops, ambiences, stingers and effects with tempo and key control.</p>
+          </div>
+        </div>
+        <form id="sounds-form" class="card" novalidate>
+          <div class="field">
+            <label class="label" for="s-prompt">Describe the sound</label>
+            <textarea id="s-prompt" class="input" rows="3" maxlength="500" placeholder="Rainy lo-fi café ambience with vinyl crackle and soft Rhodes chords"></textarea>
+            <div class="field-foot"><span></span><span class="counter" data-for="s-prompt"></span></div>
+          </div>
+          <div class="chips" id="sound-chips"></div>
+          <div class="row-3">
+            <label class="toggle">
+              <input type="checkbox" id="s-loop" />
+              <span class="toggle-ui" aria-hidden="true"></span>
+              <span><b>Seamless loop</b><small>For backgrounds & games</small></span>
+            </label>
+            <div class="field">
+              <label class="toggle toggle-inline">
+                <input type="checkbox" id="s-bpm-on" />
+                <span class="toggle-ui" aria-hidden="true"></span>
+                <span><b>Tempo</b></span>
+              </label>
+              <div class="slider-row"><input type="range" id="s-bpm" min="40" max="220" value="100" disabled /><output id="s-bpm-out">Auto</output></div>
+            </div>
+            <div class="field">
+              <label class="label" for="s-key">Key</label>
+              <select id="s-key" class="input"></select>
+            </div>
+          </div>
+          <label class="toggle toggle-inline">
+            <input type="checkbox" id="s-grab" />
+            <span class="toggle-ui" aria-hidden="true"></span>
+            <span><b>Capture lyric subtitles</b><small>If the sound has vocals</small></span>
+          </label>
+          <div class="field">
+            <span class="label">Model</span>
+            <select id="s-model" class="input model-select"></select>
+          </div>
+          <p class="form-error" id="sounds-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary btn-lg" id="sounds-submit"><span class="btn-label">🔊 Generate sound</span><span class="spinner" aria-hidden="true"></span></button>
+        </form>
+      </section>
+
+      <!-- ============ LIBRARY ============ -->
+      <section class="view" id="view-library" data-view="library" hidden>
+        <div class="view-head">
+          <div>
+            <h2>Your Library</h2>
+            <p class="muted">Everything you've made on this device. Open a track for stems, WAV, video, karaoke and more.</p>
+          </div>
+          <div class="lib-tools">
+            <input type="search" class="input" id="lib-search" placeholder="Search titles, styles, lyrics…" />
+            <select class="input" id="lib-filter">
+              <option value="all">All tracks</option>
+              <option value="fav">★ Favourites</option>
+              <option value="song">Songs</option>
+              <option value="sound">Sounds</option>
+              <option value="remix">Remixes</option>
+            </select>
+          </div>
+        </div>
+        <div id="lib-grid" class="lib-grid"></div>
+        <div id="lib-empty" class="empty" hidden>
+          <div class="eq eq-idle big" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <h3>No tracks yet</h3>
+          <p class="muted">Your first song is about a minute away.</p>
+          <a href="#create" class="btn btn-primary">Create a song</a>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============ PLAYER ============ -->
+    <footer class="player" id="player" hidden>
+      <div class="player-track">
+        <img id="p-cover" alt="" />
+        <div class="player-meta">
+          <b id="p-title">—</b>
+          <small id="p-sub">—</small>
+        </div>
+      </div>
+      <div class="player-center">
+        <div class="player-controls">
+          <button class="icon-btn" id="p-prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+          <button class="play-btn" id="p-play" aria-label="Play"><svg class="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg class="i-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+          <button class="icon-btn" id="p-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+        </div>
+        <div class="player-seek">
+          <span id="p-cur">0:00</span>
+          <input type="range" id="p-seek" min="0" max="1000" value="0" aria-label="Seek" />
+          <span id="p-dur">0:00</span>
+        </div>
+      </div>
+      <div class="player-right">
+        <div class="eq" id="p-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <button class="icon-btn" id="p-karaoke" title="Sing-along lyrics" aria-label="Sing-along lyrics"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1a7 7 0 0 0 6-6.9z"/></svg></button>
+        <button class="icon-btn" id="p-open" title="Track details" aria-label="Track details"><svg viewBox="0 0 24 24"><path d="M5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg></button>
+        <input type="range" id="p-vol" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
+      </div>
+      <audio id="audio" preload="metadata"></audio>
+    </footer>
+
+    <!-- ============ ACTIVITY DRAWER ============ -->
+    <aside class="drawer" id="jobs-drawer" aria-label="Activity" hidden>
+      <div class="drawer-head">
+        <h3>Activity</h3>
+        <div>
+          <button class="link-btn" id="jobs-clear">Clear finished</button>
+          <button class="icon-btn" data-close-drawer aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z"/></svg></button>
+        </div>
+      </div>
+      <div class="job-list" id="jobs-list"></div>
+      <p class="empty-mini" id="jobs-empty">Nothing running. Go make some noise.</p>
+    </aside>
+    <div class="scrim" id="scrim" hidden></div>
+  </div>
+
+  <!-- ============ DIALOGS ============ -->
+  <dialog id="dlg" class="dialog">
+    <form method="dialog" class="dialog-inner" id="dlg-form" novalidate>
+      <header class="dialog-head">
+        <h3 id="dlg-title"></h3>
+        <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z"/></svg></button>
+      </header>
+      <div class="dialog-body" id="dlg-body"></div>
+      <p class="form-error" id="dlg-error" role="alert" hidden></p>
+      <footer class="dialog-foot" id="dlg-foot"></footer>
+    </form>
+  </dialog>
+
+  <dialog id="track-dlg" class="dialog dialog-wide">
+    <div class="dialog-inner" id="track-body"></div>
+  </dialog>
+
+  <dialog id="karaoke-dlg" class="dialog karaoke">
+    <div class="dialog-inner">
+      <header class="dialog-head">
+        <h3 id="k-title">Sing along</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z"/></svg></button>
+      </header>
+      <div class="karaoke-wave" id="k-wave"></div>
+      <div class="karaoke-body" id="k-body"></div>
+    </div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

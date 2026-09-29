@@ -1,0 +1,34 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# Same-origin proxy to the Suno API so the browser never hits CORS limits.
+# The user's API key travels in the Authorization header and is forwarded as-is.
+[[redirects]]
+  from = "/suno-api/*"
+  to = "https://api.sunoapi.org/:splat"
+  status = 200
+  force = true
+
+# Same-origin proxy to the Suno File Upload API.
+[[redirects]]
+  from = "/suno-upload/*"
+  to = "https://sunoapiorg.redpandaai.co/:splat"
+  status = 200
+  force = true
+
+# Friendly callback endpoint that Suno can POST task results to.
+# The app polls for results, so this just acknowledges the call.
+[[redirects]]
+  from = "/callback"
+  to = "/.netlify/functions/suno-callback"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "camera=(), geolocation=()"
