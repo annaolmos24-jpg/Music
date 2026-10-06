@@ -317,7 +317,9 @@ function initLogin() {
     try {
       await sendLink(email);
       $("#sent-email").textContent = email;
+      clearError("#code-error");
       showGateStep("sent");
+      setTimeout(() => $("#login-code").focus(), 40);
     } catch (err) {
       showError("#login-error", err);
     } finally {
@@ -335,6 +337,25 @@ function initLogin() {
     }
   });
   $("#change-email").addEventListener("click", () => showGateStep("login"));
+  $("#code-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearError("#code-error");
+    const token = $("#login-code").value.replace(/\D/g, "");
+    if (token.length < 6) return showError("#code-error", "Enter the code from the email.");
+    const btn = $("#code-submit");
+    setLoading(btn, true);
+    try {
+      const { data, error } = await sb.auth.verifyOtp({ email: $("#sent-email").textContent, token, type: "email" });
+      if (error) throw new Error(/expired|invalid/i.test(error.message) ? "That code is wrong or has expired. Check the email or resend a new one." : error.message);
+      user = data.user;
+      $("#login-code").value = "";
+      enterApp();
+    } catch (err) {
+      showError("#code-error", err);
+    } finally {
+      setLoading(btn, false);
+    }
+  });
   $("#gate-signout").addEventListener("click", signOutAccount);
 }
 

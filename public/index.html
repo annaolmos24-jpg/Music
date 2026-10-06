@@ -49,20 +49,29 @@
         <input id="login-email" type="email" class="input" autocomplete="email" placeholder="you@example.com" required />
         <p id="login-error" class="form-error" role="alert" hidden></p>
         <button type="submit" class="btn btn-primary btn-lg btn-block" id="login-submit" style="margin-top:.8rem">
-          <span class="btn-label">Email me a sign-in link</span>
+          <span class="btn-label">Email me a sign-in code</span>
           <span class="spinner" aria-hidden="true"></span>
         </button>
-        <p class="fine">No password needed — we'll email you a one-time link.</p>
+        <p class="fine">No password needed — we'll email you a one-time code.</p>
       </form>
 
       <div id="login-sent" class="login-sent" hidden>
         <h2>📬 Check your inbox</h2>
-        <p class="lede">We sent a sign-in link to <b id="sent-email"></b>. Click it to continue.</p>
+        <p class="lede">We sent a code to <b id="sent-email"></b>. Enter it below.</p>
+        <form id="code-form" class="gate-form" novalidate style="margin-top:1rem">
+          <label for="login-code" class="label">Sign-in code</label>
+          <input id="login-code" class="input code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" required />
+          <p id="code-error" class="form-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary btn-lg btn-block" id="code-submit" style="margin-top:.8rem">
+            <span class="btn-label">Sign in</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+        </form>
         <div class="sent-actions">
           <button type="button" class="btn" id="resend-btn">Resend link</button>
           <button type="button" class="btn btn-ghost" id="change-email">Use a different email</button>
         </div>
-        <p class="fine">Can't find it? Check your spam folder.</p>
+        <p class="fine">Can't find it? Check your spam folder. You can also just click the link in the email.</p>
       </div>
 
       <p id="signed-in-as" class="signed-in" hidden>Signed in as <b></b> · <button type="button" class="link-btn" id="gate-signout">Sign out</button></p>

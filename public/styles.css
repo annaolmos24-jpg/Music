@@ -594,3 +594,4 @@ input[type="range"]:disabled { opacity: .45; }
 .signed-in { font-size: .88rem; color: var(--muted); margin-bottom: .6rem; }
 .signed-in b { color: var(--text); }
 #auth-loading { display: flex; align-items: center; justify-content: center; gap: .5rem; }
+.code-input { font-size: 1.5rem; letter-spacing: .4em; text-align: center; font-variant-numeric: tabular-nums; }
