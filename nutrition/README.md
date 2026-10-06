@@ -16,11 +16,17 @@ A responsive meal and wellness tracker with a personal greeting for Oriana. It u
 
 ## Deploying on Netlify
 
-Nothing to configure. Connect the GitHub repo in Netlify and leave every build setting empty. The repo's root `netlify.toml` copies Nourish to the site root (`/`) and the music app to `/music/`, and adds same-origin proxies (`/off-search/*`, `/off/*`) to Open Food Facts.
+No build step. In Netlify: **Add new site → Import an existing project →** pick this repo, then set:
 
-If the site still shows the music app, check **Site configuration → Build & deploy → Build settings** in Netlify. *Base directory* and *Publish directory* should be empty, then trigger a redeploy (**Deploys → Trigger deploy → Deploy site**).
+| Setting | Value |
+| --- | --- |
+| Base directory | `nutrition` |
+| Build command | *(leave empty)* |
+| Publish directory | `nutrition/public` (filled in automatically from `netlify.toml`) |
 
-You can also drag the `nutrition/public` folder onto Netlify Drop (app.netlify.com/drop) for a quick standalone copy.
+`netlify.toml` adds same-origin proxies (`/off-search/*`, `/off/*`) to Open Food Facts. If they aren't available, the app calls Open Food Facts directly.
+
+You can also drag the `nutrition/public` folder onto Netlify Drop (app.netlify.com/drop).
 
 ## Updating the app
 
