@@ -122,6 +122,7 @@
           <em class="badge" id="jobs-badge" hidden>0</em>
         </button>
         <div data-theme-switch></div>
+        <button class="avatar-btn" id="profile-btn" aria-label="Your profile" title="Your profile"><span class="avatar" id="topbar-avatar">?</span></button>
         <button class="icon-btn" id="settings-btn" aria-label="Settings" title="Settings">
           <svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.2h-4l-.4 2.7a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
         </button>
@@ -133,7 +134,7 @@
       <section class="view" id="view-create" data-view="create">
         <div class="view-head">
           <div>
-            <h2>What are we making today?</h2>
+            <h2 id="create-greeting">What are we making today?</h2>
             <p class="muted">Start with a vibe, or switch to Custom for full control over lyrics, style and sound.</p>
           </div>
           <div class="seg" role="radiogroup" aria-label="Creation mode" id="create-mode">

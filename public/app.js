@@ -258,6 +258,8 @@ async function sendLink(email) {
 }
 
 async function signOutAccount() {
+  profile = null;
+  renderProfileBadge();
   removeKey();
   state.client = null;
   stopPolling();
@@ -288,6 +290,8 @@ async function initAuth() {
     const next = session?.user || null;
     if (event === "SIGNED_OUT" && user) {
       user = null;
+      profile = null;
+      renderProfileBadge();
       removeKey();
       state.client = null;
       stopPolling();
@@ -360,6 +364,162 @@ function initLogin() {
 }
 
 /* =========================================================
+   Profiles (Supabase table: tunesmith_profiles)
+   ========================================================= */
+let profile = null;
+const AVATAR_BUCKET = "tunesmith-avatars";
+
+function initials() {
+  const name = profile?.display_name || profile?.username || user?.email || "?";
+  return name.trim().split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+}
+function avatarHtml() {
+  const url = safeUrl(profile?.avatar_url);
+  return url ? `<img src="${esc(url)}" alt="" />` : esc(initials());
+}
+function renderProfileBadge() {
+  $("#topbar-avatar").innerHTML = avatarHtml();
+  const first = (profile?.display_name || "").split(" ")[0];
+  $("#create-greeting").textContent = first ? `What are we making today, ${first}?` : "What are we making today?";
+}
+
+async function loadProfile() {
+  if (!sb || !user) return;
+  const uid = user.id;
+  const { data, error } = await sb.from("tunesmith_profiles").select("*").eq("id", uid).maybeSingle();
+  if (error || user?.id !== uid) return;
+  profile = data || { id: uid, favorite_genres: [] };
+  renderProfileBadge();
+  // Invite new users to set up their profile once.
+  const seen = store.get(`profilePrompted.${uid}`, false);
+  if (!profile.display_name && !seen) {
+    store.set(`profilePrompted.${uid}`, true);
+    setTimeout(() => openProfile({ welcome: true }), 600);
+  }
+}
+
+function openProfile({ welcome = false } = {}) {
+  if (!user) return;
+  const p = profile || { favorite_genres: [] };
+  const genres = new Set(p.favorite_genres || []);
+  let avatarUrl = p.avatar_url || "";
+  $("#dlg-title").textContent = welcome ? "👋 Set up your profile" : "Your profile";
+  const body = $("#dlg-body");
+  body.innerHTML = `
+    ${welcome ? '<p class="hint">Tell us a little about yourself. You can change this any time from the avatar in the top bar.</p><br>' : ""}
+    <div class="profile-head">
+      <span class="avatar lg" data-p="avatar"></span>
+      <div>
+        <div class="actions">
+          <label class="btn btn-sm">Upload photo<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-p="file" /></label>
+          <button type="button" class="btn btn-sm btn-ghost" data-p="remove">Remove</button>
+        </div>
+        <p class="hint" style="margin-top:.4rem">PNG, JPG, WebP or GIF · up to 2 MB</p>
+      </div>
+    </div>
+    <div class="fb-grid">
+      <div class="field"><label class="label" for="p-name">Display name</label><input id="p-name" class="input" maxlength="60" placeholder="e.g. Anna Olmos" value="${esc(p.display_name || "")}" /></div>
+      <div class="field"><label class="label" for="p-user">Username</label><div class="username-wrap"><span>@</span><input id="p-user" class="input" maxlength="24" placeholder="anna_beats" value="${esc(p.username || "")}" /></div><p class="hint">3–24 lowercase letters, numbers or _</p></div>
+      <div class="field full"><label class="label" for="p-bio">Bio</label><textarea id="p-bio" class="input" rows="3" maxlength="280" placeholder="Bedroom producer, synth lover, chasing the perfect chorus.">${esc(p.bio || "")}</textarea><div class="field-foot"><span></span><span class="counter" data-p="bio-count"></span></div></div>
+      <div class="field full"><span class="label">Favourite genres</span><div class="chips" data-p="genres" style="margin-top:0"></div></div>
+      <div class="field full"><span class="label">Email</span><p class="hint">${esc(user.email)}</p></div>
+    </div>`;
+  const av = $("[data-p=avatar]", body);
+  const paintAvatar = () => {
+    const url = safeUrl(avatarUrl);
+    av.innerHTML = url ? `<img src="${esc(url)}" alt="" />` : esc(initials());
+    $("[data-p=remove]", body).hidden = !avatarUrl;
+  };
+  paintAvatar();
+
+  const chipHost = $("[data-p=genres]", body);
+  chipHost.innerHTML = GENRES.map((g) => `<button type="button" class="chip ${genres.has(g) ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+  $$(".chip", chipHost).forEach((c) => c.addEventListener("click", () => {
+    const g = c.dataset.g;
+    if (genres.has(g)) genres.delete(g);
+    else if (genres.size >= 12) return toast("Up to 12 genres");
+    else genres.add(g);
+    c.classList.toggle("on", genres.has(g));
+  }));
+
+  const bio = $("#p-bio", body);
+  const count = () => ($("[data-p=bio-count]", body).textContent = `${bio.value.length} / 280`);
+  bio.addEventListener("input", count);
+  count();
+  $("#p-user", body).addEventListener("input", (e) => (e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")));
+
+  $("[data-p=file]", body).addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) return toast("Please choose a PNG, JPG, WebP or GIF", "", { type: "error" });
+    if (file.size > 2 * 1024 * 1024) return toast("That image is over 2 MB", "Try a smaller one.", { type: "error" });
+    av.innerHTML = '<span class="spinner"></span>';
+    try {
+      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+      const { error } = await sb.storage.from(AVATAR_BUCKET).upload(path, file, { contentType: file.type, upsert: true });
+      if (error) throw error;
+      avatarUrl = sb.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+    } catch (err) {
+      toast("Upload failed", err.message, { type: "error" });
+    }
+    paintAvatar();
+  });
+  $("[data-p=remove]", body).addEventListener("click", () => { avatarUrl = ""; paintAvatar(); });
+
+  const foot = $("#dlg-foot");
+  foot.innerHTML = "";
+  const cancel = el("button", "btn btn-ghost", welcome ? "Skip for now" : "Cancel");
+  cancel.addEventListener("click", () => dlg.close());
+  const saveBtn = el("button", "btn btn-primary", '<span class="btn-label">Save profile</span><span class="spinner"></span>');
+  saveBtn.type = "submit";
+  foot.append(cancel, saveBtn);
+  clearError("#dlg-error");
+
+  dlgSubmit = async () => {
+    clearError("#dlg-error");
+    const username = $("#p-user", body).value.trim();
+    if (username && !/^[a-z0-9_]{3,24}$/.test(username)) return showError("#dlg-error", "Usernames need 3–24 lowercase letters, numbers or underscores.");
+    const row = {
+      id: user.id,
+      display_name: $("#p-name", body).value.trim() || null,
+      username: username || null,
+      bio: bio.value.trim() || null,
+      avatar_url: avatarUrl || null,
+      favorite_genres: [...genres],
+    };
+    setLoading(saveBtn, true);
+    try {
+      const { data, error } = await sb.from("tunesmith_profiles").upsert(row).select().single();
+      if (error) {
+        if (error.code === "23505") throw new Error(`@${username} is taken — try another username.`);
+        throw new Error(error.message);
+      }
+      const oldUrl = profile?.avatar_url;
+      profile = data;
+      renderProfileBadge();
+      removeOldAvatar(oldUrl, data.avatar_url);
+      dlg.close();
+      toast("Profile saved ✨", data.display_name ? `Looking good, ${data.display_name.split(" ")[0]}!` : "", { type: "success" });
+    } catch (err) {
+      showError("#dlg-error", err);
+    } finally {
+      setLoading(saveBtn, false);
+    }
+  };
+  if (!dlg.open) dlg.showModal();
+}
+
+// Clean up a replaced profile photo (best effort).
+function removeOldAvatar(oldUrl, newUrl) {
+  const marker = `/object/public/${AVATAR_BUCKET}/`;
+  if (!oldUrl || oldUrl === newUrl || !oldUrl.includes(marker)) return;
+  const path = decodeURIComponent(oldUrl.split(marker)[1] || "");
+  if (path.startsWith(`${user.id}/`)) sb.storage.from(AVATAR_BUCKET).remove([path]).catch(() => {});
+}
+
+/* =========================================================
    Key gate
    ========================================================= */
 // The Suno key is stored per signed-in account.
@@ -409,6 +569,7 @@ function initGate() {
 
 function unlock(client, credits) {
   state.client = client;
+  loadProfile();
   $("#gate").hidden = true;
   $("#app").hidden = false;
   if (credits != null) setCredits(credits);
@@ -2282,7 +2443,7 @@ function openSettings() {
   $("#dlg-title").textContent = "Settings";
   const body = $("#dlg-body");
   body.innerHTML = `
-    <div class="settings-row"><div><b>Account</b><small>${esc(user?.email || "—")}</small></div><button type="button" class="btn btn-sm btn-danger" data-s="signout">Sign out</button></div>
+    <div class="settings-row"><div><b>Account</b><small>${esc(user?.email || "—")}</small></div><div style="display:flex;gap:.4rem"><button type="button" class="btn btn-sm" data-s="profile">Edit profile</button><button type="button" class="btn btn-sm btn-danger" data-s="signout">Sign out</button></div></div>
     <div class="settings-row"><div><b>API key</b><small><span class="key-mask">${esc(masked)}</span> · ${remembered ? "remembered on this device" : "this session only"}</small></div><button type="button" class="btn btn-sm btn-danger" data-s="lock">Remove key</button></div>
     <div class="settings-row"><div><b>Credits</b><small>${state.credits != null ? Number(state.credits).toLocaleString() + " remaining" : "—"}</small></div><a class="btn btn-sm" href="https://sunoapi.org" target="_blank" rel="noopener">Top up</a></div>
     <div class="settings-row"><div><b>Connection</b><small>Auto uses the built-in secure proxy on Netlify, falling back to direct calls.</small></div>
@@ -2301,6 +2462,7 @@ function openSettings() {
     toast("Connection updated");
   });
   $("[data-s=lock]", body).addEventListener("click", () => { dlg.close(); lock(); toast("Key removed", "Add a key to keep creating."); });
+  $("[data-s=profile]", body).addEventListener("click", () => openProfile());
   $("[data-s=signout]", body).addEventListener("click", async () => { await signOutAccount(); toast("Signed out", "See you next time."); });
   $("[data-s=addp]", body).addEventListener("click", () => addPersonaManually());
   $("[data-s=clearp]", body)?.addEventListener("click", () => {
@@ -2367,6 +2529,7 @@ function initShell() {
     renderJobs();
   });
   $("#settings-btn").addEventListener("click", openSettings);
+  $("#profile-btn").addEventListener("click", () => openProfile());
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#jobs-drawer").hidden) closeDrawer(); });
 }
 
