@@ -585,3 +585,12 @@ input[type="range"]:disabled { opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Email sign-in */
+.gate-steps li.done b { background: var(--success-soft); color: var(--success); }
+.gate-steps li.current span { color: var(--text); font-weight: 600; }
+.login-sent h2 { margin-bottom: .5rem; }
+.sent-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+.signed-in { font-size: .88rem; color: var(--muted); margin-bottom: .6rem; }
+.signed-in b { color: var(--text); }
+#auth-loading { display: flex; align-items: center; justify-content: center; gap: .5rem; }

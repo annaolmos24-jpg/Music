@@ -1,5 +1,6 @@
 import { SunoClient, ApiError } from "./api.js";
 import { midiFromNotes } from "./midi.js";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
 /* =========================================================
    Helpers
@@ -211,16 +212,147 @@ function setLoading(btn, on) {
 }
 
 /* =========================================================
+   Email sign-in (Supabase magic link)
+   ========================================================= */
+const sb = window.supabase?.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "implicit" },
+});
+let user = null;
+let resendAt = 0;
+
+function showGateStep(step) {
+  $("#auth-loading").hidden = true;
+  $("#login-form").hidden = step !== "login";
+  $("#login-sent").hidden = step !== "sent";
+  $("#gate-form").hidden = step !== "key";
+  $("#signed-in-as").hidden = !user;
+  if (user) $("#signed-in-as b").textContent = user.email;
+  const n = step === "key" ? 2 : 1;
+  $$(".gate-steps li").forEach((li) => {
+    li.classList.toggle("done", +li.dataset.step < n);
+    li.classList.toggle("current", +li.dataset.step === n);
+  });
+  $("#gate").hidden = false;
+  $("#app").hidden = true;
+  setTimeout(() => (step === "login" ? $("#login-email") : step === "key" ? $("#gate-key") : null)?.focus(), 30);
+}
+
+// Decide what to show: sign-in, API key, or the studio.
+function enterApp() {
+  if (!user) return showGateStep("login");
+  const key = readKey();
+  if (key) unlock(new SunoClient(key));
+  else showGateStep("key");
+}
+
+async function sendLink(email) {
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true },
+  });
+  if (error) {
+    if (error.status === 429 || /rate limit/i.test(error.message)) throw new Error("Too many emails sent. Please wait a minute and try again.");
+    throw new Error(error.message);
+  }
+  resendAt = Date.now() + 60000;
+}
+
+async function signOutAccount() {
+  removeKey();
+  state.client = null;
+  stopPolling();
+  audio.pause();
+  $$("dialog[open]").forEach((d) => d.close());
+  await sb?.auth.signOut();
+  user = null;
+  showGateStep("login");
+}
+
+async function initAuth() {
+  // Errors from an expired or reused link come back in the URL hash.
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const linkError = hash.get("error_description");
+
+  if (!sb) {
+    showGateStep("login");
+    $("#login-error").textContent = "Sign-in couldn't load. Check your connection and refresh the page.";
+    $("#login-error").hidden = false;
+    return;
+  }
+
+  const { data } = await sb.auth.getSession();
+  user = data.session?.user || null;
+  if (hash.has("access_token") || hash.has("error")) history.replaceState(null, "", location.pathname + location.search);
+
+  sb.auth.onAuthStateChange((event, session) => {
+    const next = session?.user || null;
+    if (event === "SIGNED_OUT" && user) {
+      user = null;
+      removeKey();
+      state.client = null;
+      stopPolling();
+      audio.pause();
+      showGateStep("login");
+    } else if (event === "SIGNED_IN" && next && next.id !== user?.id) {
+      user = next;
+      setTimeout(enterApp, 0);
+    }
+  });
+
+  enterApp();
+  if (!user && linkError) {
+    $("#login-error").textContent = /expired|invalid/i.test(linkError) ? "That sign-in link has expired or was already used. Request a new one below." : linkError;
+    $("#login-error").hidden = false;
+  }
+}
+
+function initLogin() {
+  $("#login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearError("#login-error");
+    const email = $("#login-email").value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError("#login-error", "Enter a valid email address.");
+    const btn = $("#login-submit");
+    setLoading(btn, true);
+    try {
+      await sendLink(email);
+      $("#sent-email").textContent = email;
+      showGateStep("sent");
+    } catch (err) {
+      showError("#login-error", err);
+    } finally {
+      setLoading(btn, false);
+    }
+  });
+  $("#resend-btn").addEventListener("click", async () => {
+    const wait = Math.ceil((resendAt - Date.now()) / 1000);
+    if (wait > 0) return toast(`You can resend in ${wait}s`);
+    try {
+      await sendLink($("#sent-email").textContent);
+      toast("New link sent 📬", "", { type: "success" });
+    } catch (err) {
+      toast("Couldn't resend", err.message, { type: "error" });
+    }
+  });
+  $("#change-email").addEventListener("click", () => showGateStep("login"));
+  $("#gate-signout").addEventListener("click", signOutAccount);
+}
+
+/* =========================================================
    Key gate
    ========================================================= */
+// The Suno key is stored per signed-in account.
+const keyName = () => `ts.key.${user?.id || "anon"}`;
 function readKey() {
-  try { return localStorage.getItem("ts.key") || sessionStorage.getItem("ts.key") || ""; } catch { return ""; }
+  try { return localStorage.getItem(keyName()) || sessionStorage.getItem(keyName()) || ""; } catch { return ""; }
+}
+function removeKey() {
+  try { localStorage.removeItem(keyName()); sessionStorage.removeItem(keyName()); localStorage.removeItem("ts.key"); } catch {}
 }
 function writeKey(key, remember) {
   try {
-    localStorage.removeItem("ts.key");
-    sessionStorage.removeItem("ts.key");
-    (remember ? localStorage : sessionStorage).setItem("ts.key", key);
+    removeKey();
+    (remember ? localStorage : sessionStorage).setItem(keyName(), key);
   } catch {}
 }
 
@@ -265,18 +397,16 @@ function unlock(client, credits) {
 }
 
 function lock(message) {
-  try { localStorage.removeItem("ts.key"); sessionStorage.removeItem("ts.key"); } catch {}
+  removeKey();
   state.client = null;
   stopPolling();
   audio.pause();
   $$("dialog[open]").forEach((d) => d.close());
-  $("#app").hidden = true;
-  $("#gate").hidden = false;
+  showGateStep(user ? "key" : "login");
   if (message) {
     $("#gate-error").textContent = message;
     $("#gate-error").hidden = false;
   }
-  $("#gate-key").focus();
 }
 
 /* =========================================================
@@ -2127,11 +2257,12 @@ kDlg.addEventListener("close", () => cancelAnimationFrame(kRaf));
 function openSettings() {
   const key = readKey();
   const masked = key ? `${key.slice(0, 4)}••••••${key.slice(-4)}` : "—";
-  const remembered = (() => { try { return !!localStorage.getItem("ts.key"); } catch { return false; } })();
+  const remembered = (() => { try { return !!localStorage.getItem(keyName()); } catch { return false; } })();
   $("#dlg-title").textContent = "Settings";
   const body = $("#dlg-body");
   body.innerHTML = `
-    <div class="settings-row"><div><b>API key</b><small><span class="key-mask">${esc(masked)}</span> · ${remembered ? "remembered on this device" : "this session only"}</small></div><button type="button" class="btn btn-sm btn-danger" data-s="lock">Sign out</button></div>
+    <div class="settings-row"><div><b>Account</b><small>${esc(user?.email || "—")}</small></div><button type="button" class="btn btn-sm btn-danger" data-s="signout">Sign out</button></div>
+    <div class="settings-row"><div><b>API key</b><small><span class="key-mask">${esc(masked)}</span> · ${remembered ? "remembered on this device" : "this session only"}</small></div><button type="button" class="btn btn-sm btn-danger" data-s="lock">Remove key</button></div>
     <div class="settings-row"><div><b>Credits</b><small>${state.credits != null ? Number(state.credits).toLocaleString() + " remaining" : "—"}</small></div><a class="btn btn-sm" href="https://sunoapi.org" target="_blank" rel="noopener">Top up</a></div>
     <div class="settings-row"><div><b>Connection</b><small>Auto uses the built-in secure proxy on Netlify, falling back to direct calls.</small></div>
       <select class="input" style="width:auto" data-s="conn"><option value="auto">Auto</option><option value="proxy">Proxy only</option><option value="direct">Direct to api.sunoapi.org</option></select></div>
@@ -2148,7 +2279,8 @@ function openSettings() {
     state.client = new SunoClient(state.client.key);
     toast("Connection updated");
   });
-  $("[data-s=lock]", body).addEventListener("click", () => { dlg.close(); lock(); toast("Signed out", "Your key was removed from this device."); });
+  $("[data-s=lock]", body).addEventListener("click", () => { dlg.close(); lock(); toast("Key removed", "Add a key to keep creating."); });
+  $("[data-s=signout]", body).addEventListener("click", async () => { await signOutAccount(); toast("Signed out", "See you next time."); });
   $("[data-s=addp]", body).addEventListener("click", () => addPersonaManually());
   $("[data-s=clearp]", body)?.addEventListener("click", () => {
     if (!confirm("Remove all saved personas?")) return;
@@ -2228,14 +2360,8 @@ function boot() {
   initLibrary();
   initPlayer();
   renderJobs();
-
-  const key = readKey();
-  if (key) {
-    // Optimistically open the studio; the credit check will bounce us back if the key is bad.
-    unlock(new SunoClient(key));
-  } else {
-    $("#gate-key").focus();
-  }
+  initLogin();
+  initAuth();
 }
 
 boot();

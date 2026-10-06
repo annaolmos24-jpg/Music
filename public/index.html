@@ -37,12 +37,37 @@
       <p class="lede">Describe a vibe, write your own lyrics, or upload a melody. Tunesmith drives the Suno API to compose, remix, split stems, and even make the music video.</p>
 
       <ol class="gate-steps">
-        <li><b>1</b><span>Get a key at <a href="https://sunoapi.org/api-key" target="_blank" rel="noopener">sunoapi.org/api-key</a></span></li>
-        <li><b>2</b><span>Paste it below to unlock the studio</span></li>
-        <li><b>3</b><span>Make something loud</span></li>
+        <li data-step="1"><b>1</b><span>Sign in with your email</span></li>
+        <li data-step="2"><b>2</b><span>Add your key from <a href="https://sunoapi.org/api-key" target="_blank" rel="noopener">sunoapi.org/api-key</a></span></li>
+        <li data-step="3"><b>3</b><span>Make something loud</span></li>
       </ol>
 
-      <form id="gate-form" class="gate-form" autocomplete="off">
+      <p id="auth-loading" class="fine"><span class="spinner"></span> Checking your session…</p>
+
+      <form id="login-form" class="gate-form" novalidate hidden>
+        <label for="login-email" class="label">Email</label>
+        <input id="login-email" type="email" class="input" autocomplete="email" placeholder="you@example.com" required />
+        <p id="login-error" class="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="login-submit" style="margin-top:.8rem">
+          <span class="btn-label">Email me a sign-in link</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+        <p class="fine">No password needed — we'll email you a one-time link.</p>
+      </form>
+
+      <div id="login-sent" class="login-sent" hidden>
+        <h2>📬 Check your inbox</h2>
+        <p class="lede">We sent a sign-in link to <b id="sent-email"></b>. Click it to continue.</p>
+        <div class="sent-actions">
+          <button type="button" class="btn" id="resend-btn">Resend link</button>
+          <button type="button" class="btn btn-ghost" id="change-email">Use a different email</button>
+        </div>
+        <p class="fine">Can't find it? Check your spam folder.</p>
+      </div>
+
+      <p id="signed-in-as" class="signed-in" hidden>Signed in as <b></b> · <button type="button" class="link-btn" id="gate-signout">Sign out</button></p>
+
+      <form id="gate-form" class="gate-form" autocomplete="off" hidden>
         <label for="gate-key" class="label">Suno API key</label>
         <div class="input-group">
           <input id="gate-key" type="password" class="input" placeholder="Paste your API key" spellcheck="false" required />
@@ -453,6 +478,7 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
+  <script src="vendor/supabase.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
