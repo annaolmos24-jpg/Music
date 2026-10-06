@@ -1,0 +1,32 @@
+# Netlify config for Nourish.
+# In Netlify set "Base directory" to `nutrition` (Publish directory is then picked up from here).
+
+[build]
+  publish = "public"
+
+# Same-origin proxies to Open Food Facts (free, no key needed).
+# The app falls back to calling Open Food Facts directly if these aren't available.
+[[redirects]]
+  from = "/off-search/*"
+  to = "https://search.openfoodfacts.org/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/off/*"
+  to = "https://world.openfoodfacts.org/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "camera=(self), geolocation=(), microphone=()"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
