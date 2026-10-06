@@ -607,3 +607,68 @@ input[type="range"]:disabled { opacity: .45; }
 .username-wrap { position: relative; }
 .username-wrap span { position: absolute; left: .85rem; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .username-wrap .input { padding-left: 1.75rem; }
+
+/* ---------------- Admin console ---------------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.adm-tools { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.adm-tools .toggle-inline { margin: 0; }
+.adm-h { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-family: "Inter", system-ui, sans-serif; margin: 0 0 .6rem; }
+.adm-h small { text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: .4rem; }
+.role-badge { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: .2rem .55rem; border-radius: 999px; background: var(--surface-3); color: var(--text-2); white-space: nowrap; }
+.role-badge.admin { background: var(--accent-soft); color: var(--accent); }
+.role-badge.employee { background: color-mix(in srgb, var(--accent-3) 18%, transparent); color: var(--accent-3); }
+.adm-status { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .7rem; margin-bottom: 1.1rem; }
+.svc { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: .85rem 1rem; display: grid; gap: .2rem; }
+.svc-top { display: flex; align-items: center; gap: .5rem; font-weight: 600; font-size: .92rem; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 20%, transparent); }
+.dot.bad { background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 20%, transparent); }
+.dot.warn { background: var(--warning); }
+.dot.wait { animation: pulse 1.2s ease-in-out infinite; }
+.svc small { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
+.adm-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .7rem; margin-bottom: 1.2rem; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: .9rem 1rem; }
+.tile b { display: block; font-family: "Space Grotesk", sans-serif; font-size: 1.7rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile span { color: var(--muted); font-size: .8rem; }
+.tile.bad b { color: var(--danger); }
+.adm-card { margin-bottom: 1.2rem; padding: 1.1rem 1.2rem; }
+.adm-card-head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap; margin-bottom: .9rem; }
+.adm-card-head h3 small { color: var(--muted); font-weight: 500; font-size: .85rem; margin-left: .3rem; }
+.adm-filters { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.adm-filters .input { width: auto; min-width: 160px; padding: .5rem .75rem; }
+.adm-filters input[type="search"] { min-width: 240px; }
+.adm-table-wrap { position: relative; overflow-x: auto; margin: 0 -1.2rem; padding: 0 1.2rem; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: .88rem; min-width: 720px; }
+.adm-table th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; padding: .5rem .6rem; border-bottom: 1px solid var(--border); }
+.adm-table td { padding: .65rem .6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.adm-table tr:last-child td { border-bottom: 0; }
+.adm-table tbody tr:hover { background: var(--surface-2); }
+.adm-person { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.adm-person div { min-width: 0; }
+.adm-person b, .adm-person small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.adm-person small { color: var(--muted); font-size: .78rem; }
+.adm-table select.input { width: auto; padding: .35rem 2rem .35rem .6rem; font-size: .85rem; }
+.status { font-size: .8rem; font-weight: 600; display: inline-flex; align-items: center; gap: .35rem; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.status.suspended { color: var(--danger); } .status.suspended::before { background: var(--danger); }
+.status.pending { color: var(--muted); } .status.pending::before { background: var(--muted); }
+.adm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
+.adm-feed { display: grid; gap: .1rem; max-height: 360px; overflow-y: auto; }
+.feed-row { display: flex; gap: .7rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px dashed var(--border); font-size: .86rem; }
+.feed-row:last-child { border-bottom: 0; }
+.feed-row time { color: var(--muted); font-size: .76rem; white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 4.8rem; }
+.feed-row .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.feed-row .what small { color: var(--muted); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: .45rem 1rem; font-size: .88rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.meter { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: .3rem; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.adm-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.adm-roles p { color: var(--text-2); font-size: .86rem; margin-top: .5rem; }
+.adm-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.empty-row { text-align: center; color: var(--muted); padding: 1.5rem !important; }
+@media (max-width: 860px) {
+  .adm-grid, .adm-roles { grid-template-columns: minmax(0, 1fr); }
+  .adm-filters, .adm-filters .input, .adm-filters input[type="search"] { width: 100%; min-width: 0; }
+}

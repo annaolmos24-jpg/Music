@@ -238,8 +238,13 @@ function showGateStep(step) {
 }
 
 // Decide what to show: sign-in, API key, or the studio.
+let visitLoggedFor = null;
 function enterApp() {
   if (!user) return showGateStep("login");
+  if (visitLoggedFor !== user.id) {
+    visitLoggedFor = user.id;
+    logEvent("visit");
+  }
   const key = readKey();
   if (key) unlock(new SunoClient(key));
   else showGateStep("key");
@@ -258,6 +263,8 @@ async function sendLink(email) {
 }
 
 async function signOutAccount() {
+  leaveAdmin();
+  visitLoggedFor = null;
   profile = null;
   renderProfileBadge();
   removeKey();
@@ -310,13 +317,42 @@ async function initAuth() {
   }
 }
 
+let passwordMode = false;
+function setPasswordMode(on) {
+  passwordMode = on;
+  $("#pw-field").hidden = !on;
+  $("#login-submit .btn-label").textContent = on ? "Sign in" : "Email me a sign-in code";
+  $("#login-fine").textContent = on ? "Passwords are set by an administrator." : "No password needed — we'll email you a one-time code.";
+  $("#pw-toggle").textContent = on ? "Email me a code instead" : "Have a password? Sign in with it";
+  clearError("#login-error");
+  (on ? $("#login-password") : $("#login-email")).focus();
+}
+
 function initLogin() {
+  $("#pw-toggle").addEventListener("click", () => setPasswordMode(!passwordMode));
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     clearError("#login-error");
     const email = $("#login-email").value.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError("#login-error", "Enter a valid email address.");
     const btn = $("#login-submit");
+    if (passwordMode) {
+      const password = $("#login-password").value;
+      if (!password) return showError("#login-error", "Enter your password.");
+      setLoading(btn, true);
+      try {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw new Error(/invalid login/i.test(error.message) ? "Wrong email or password." : /banned/i.test(error.message) ? "This account has been suspended." : error.message);
+        $("#login-password").value = "";
+        user = data.user;
+        enterApp();
+      } catch (err) {
+        showError("#login-error", err);
+      } finally {
+        setLoading(btn, false);
+      }
+      return;
+    }
     setLoading(btn, true);
     try {
       await sendLink(email);
@@ -381,6 +417,7 @@ function renderProfileBadge() {
   $("#topbar-avatar").innerHTML = avatarHtml();
   const first = (profile?.display_name || "").split(" ")[0];
   $("#create-greeting").textContent = first ? `What are we making today, ${first}?` : "What are we making today?";
+  updateAdminAccess();
 }
 
 async function loadProfile() {
@@ -520,6 +557,410 @@ function removeOldAvatar(oldUrl, newUrl) {
 }
 
 /* =========================================================
+   Activity log (feeds the admin console's monitoring)
+   ========================================================= */
+function logEvent(kind, detail = {}) {
+  if (!sb || !user) return;
+  sb.from("tunesmith_events").insert({ user_id: user.id, kind, detail }).then(() => {}, () => {});
+}
+
+/* =========================================================
+   Admin console (roles: admin = full access, employee = read-only)
+   ========================================================= */
+const ROLE_LABEL = { admin: "Administrator", employee: "Employee", user: "User" };
+const isStaff = () => profile?.role === "admin" || profile?.role === "employee";
+const isAdmin = () => profile?.role === "admin";
+const adm = { users: [], timer: null, loading: false, loadedOnce: false };
+
+function updateAdminAccess() {
+  const tab = $("#admin-tab");
+  if (!tab) return;
+  tab.hidden = !isStaff();
+  $$("[data-admin-only]").forEach((n) => (n.hidden = !isAdmin()));
+  // If someone opened #admin before their profile loaded, route again now.
+  if (location.hash === "#admin" && !$("#app").hidden) route();
+}
+
+async function adminCall(action, payload = {}) {
+  const { data, error } = await sb.functions.invoke("tunesmith-admin", { body: { action, ...payload } });
+  if (error) {
+    let msg = error.message;
+    try {
+      const body = await error.context?.json?.();
+      if (body?.error) msg = body.error;
+    } catch {}
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+function enterAdmin() {
+  $("#adm-role").className = `role-badge ${profile?.role || ""}`;
+  $("#adm-role").textContent = isAdmin() ? "Administrator" : "Employee · read-only";
+  $("#adm-sub").textContent = isAdmin()
+    ? "Manage people and roles, and keep an eye on the site."
+    : "You have read-only access. Ask an administrator to make changes.";
+  if (!adm.loadedOnce) refreshAdmin();
+  setAutoRefresh($("#adm-auto").checked);
+}
+function leaveAdmin() {
+  clearInterval(adm.timer);
+  adm.timer = null;
+}
+function setAutoRefresh(on) {
+  clearInterval(adm.timer);
+  adm.timer = on ? setInterval(() => { if (!document.hidden) refreshAdmin(); }, 30000) : null;
+}
+
+function fmtWhen(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const s = (Date.now() - d) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
+  return d.toLocaleDateString();
+}
+function fmtBytes(n) {
+  if (!n && n !== 0) return "—";
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
+}
+function fmtDuration(fromIso) {
+  const s = (Date.now() - new Date(fromIso)) / 1000;
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+const isSuspended = (u) => u.banned_until && new Date(u.banned_until) > new Date();
+
+function svcCard(name, check, okText) {
+  const cls = check == null ? "wait" : check.ok ? "ok" : "bad";
+  const detail = check == null ? "Checking…" : check.ok ? (okText || `Up · ${check.ms} ms`) : check.error || "Down";
+  return `<div class="svc"><div class="svc-top"><span class="dot ${cls}"></span>${esc(name)}</div><small>${esc(detail)}</small></div>`;
+}
+
+async function timedCheck(fn) {
+  const t = performance.now();
+  try {
+    const extra = await fn();
+    return { ok: true, ms: Math.round(performance.now() - t), extra };
+  } catch (err) {
+    return { ok: false, ms: Math.round(performance.now() - t), error: err.message || String(err) };
+  }
+}
+
+async function refreshAdmin() {
+  if (adm.loading || !isStaff()) return;
+  adm.loading = true;
+  const btn = $("#adm-refresh");
+  setLoading(btn, true);
+  clearError("#adm-error");
+  $("#adm-status").innerHTML = ["Database", "Sign-in service", "File storage", "Suno API", "Site functions"].map((n) => svcCard(n, null)).join("");
+
+  // Checks the browser can do itself
+  const sunoCheck = timedCheck(async () => {
+    if (!state.client) throw new Error("No API key in this session");
+    const c = await state.client.credits();
+    return `${Number(c).toLocaleString()} credits on your key`;
+  });
+  const siteCheck = timedCheck(async () => {
+    const r = await fetch("/callback", { method: "POST" });
+    if (!r.ok) throw new Error(`Callback returned ${r.status}`);
+  });
+  const dbStats = sb.rpc("tunesmith_db_stats").then(({ data, error }) => { if (error) throw error; return data; });
+
+  const [overview, users, audit, suno, site, db] = await Promise.allSettled([
+    adminCall("overview"),
+    adminCall("list_users"),
+    isAdmin() ? adminCall("audit_log") : Promise.resolve({ entries: [] }),
+    sunoCheck,
+    siteCheck,
+    dbStats,
+  ]);
+
+  const ov = overview.status === "fulfilled" ? overview.value : null;
+  if (!ov) {
+    const msg = overview.reason?.message || "Couldn't reach the admin service.";
+    showError("#adm-error", `Admin service: ${msg}`);
+  }
+  const h = ov?.health || {};
+  const fail = (r) => ({ ok: false, error: r.reason?.message || "Unavailable" });
+  $("#adm-status").innerHTML = [
+    svcCard("Database", ov ? h.database : db.status === "fulfilled" ? { ok: true, ms: 0 } : fail(db), ov ? null : "Connected"),
+    svcCard("Sign-in service", ov ? h.auth : fail(overview)),
+    svcCard("File storage", ov ? h.storage : fail(overview)),
+    svcCard("Suno API", suno.value, suno.value?.ok ? `Up · ${suno.value.ms} ms · ${suno.value.extra}` : null),
+    svcCard("Site functions", site.value, site.value?.ok ? `Up · ${site.value.ms} ms` : null),
+  ].join("");
+  if (site.value && !site.value.ok && /^(localhost|127\.)/.test(location.hostname)) {
+    $("#adm-status").lastElementChild.querySelector("small").textContent = "Only available on the deployed Netlify site";
+    $("#adm-status").lastElementChild.querySelector(".dot").className = "dot warn";
+  }
+  $("#adm-checked").textContent = `· checked ${new Date().toLocaleTimeString()}`;
+
+  if (ov) {
+    const u = ov.users, a = ov.activity;
+    const tiles = [
+      [u.total, "People"],
+      [u.new7d, "New this week"],
+      [u.active24h, "Signed in today"],
+      [a.requests24h, "Studio requests (24h)"],
+      [a.failures24h, "Failed tasks (24h)", a.failures24h > 0],
+      [`${u.roles.admin || 0} · ${u.roles.employee || 0} · ${u.roles.user || 0}`, "Admins · Employees · Users"],
+    ];
+    if (u.banned) tiles.push([u.banned, "Suspended", true]);
+    $("#adm-tiles").innerHTML = tiles.map(([v, l, bad]) => `<div class="tile ${bad ? "bad" : ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
+    renderActivity(a.recent);
+  }
+
+  if (users.status === "fulfilled") {
+    adm.users = users.value.users || [];
+    renderAdminUsers();
+  } else if (ov) {
+    showError("#adm-error", users.reason?.message || "Couldn't load people.");
+  }
+
+  renderDbStats(db.status === "fulfilled" ? db.value : null, db.reason?.message);
+  if (isAdmin()) renderAudit(audit.status === "fulfilled" ? audit.value.entries : null);
+
+  adm.loadedOnce = true;
+  adm.loading = false;
+  setLoading(btn, false);
+}
+
+const EVENT_TEXT = {
+  visit: "opened the studio",
+  song: "created a song",
+  remix: "started a remix",
+  sound: "generated a sound",
+  lyrics: "wrote lyrics",
+  wav: "rendered a WAV",
+  stems: "split stems",
+  midi: "exported MIDI",
+  video: "made a music video",
+  cover: "made cover art",
+  recovery: "restored audio links",
+  failed: "had a task fail",
+};
+function renderActivity(rows) {
+  const host = $("#adm-activity");
+  if (!rows?.length) {
+    host.innerHTML = '<p class="muted">No activity yet. It will show up here as people use the studio.</p>';
+    return;
+  }
+  host.innerHTML = rows.map((e) => {
+    const who = e.email || "Someone";
+    const extra = [e.detail?.op, e.detail?.model, e.kind === "failed" && e.detail?.error].filter(Boolean).join(" · ");
+    return `<div class="feed-row"><time title="${esc(new Date(e.created_at).toLocaleString())}">${esc(fmtWhen(e.created_at))}</time><div class="what"><b>${esc(who)}</b> ${esc(EVENT_TEXT[e.kind] || e.kind)}${extra ? ` <small>· ${esc(extra)}</small>` : ""}</div></div>`;
+  }).join("");
+}
+
+const AUDIT_TEXT = {
+  set_role: (d) => `changed role ${d.from || "?"} → ${d.to || "?"}`,
+  set_password: () => "set a new password",
+  suspend_user: () => "suspended",
+  restore_user: () => "restored",
+  delete_user: () => "deleted",
+  create_user: (d) => `added as ${d.role || "user"}`,
+  update_profile: () => "edited the profile",
+};
+function renderAudit(entries) {
+  const host = $("#adm-audit");
+  if (!entries) { host.innerHTML = '<p class="muted">Couldn\'t load the history.</p>'; return; }
+  if (!entries.length) { host.innerHTML = '<p class="muted">No admin changes yet.</p>'; return; }
+  host.innerHTML = entries.map((e) => `<div class="feed-row"><time title="${esc(new Date(e.created_at).toLocaleString())}">${esc(fmtWhen(e.created_at))}</time><div class="what"><b>${esc(e.actor_email || "An admin")}</b> → ${esc(e.target_email || "someone")}: ${esc((AUDIT_TEXT[e.action] || (() => e.action))(e.detail || {}))}</div></div>`).join("");
+}
+
+function renderDbStats(d, errMsg) {
+  const host = $("#adm-db");
+  if (!d) { host.innerHTML = `<p class="form-error">${esc(errMsg || "Couldn't read database stats.")}</p>`; return; }
+  const pct = Math.min(100, Math.round((d.connections / d.max_connections) * 100));
+  const tables = Object.entries(d.tables || {}).sort((a, b) => a[0].localeCompare(b[0]));
+  host.innerHTML = `
+    <dl class="kv">
+      <dt>Status</dt><dd><span class="status">Connected</span></dd>
+      <dt>Postgres</dt><dd>${esc(d.version)}</dd>
+      <dt>Size</dt><dd>${esc(fmtBytes(d.size_bytes))}</dd>
+      <dt>Connections</dt><dd>${esc(d.connections)} of ${esc(d.max_connections)}<div class="meter"><i style="width:${pct}%"></i></div></dd>
+      <dt>Up for</dt><dd>${esc(fmtDuration(d.started_at))}</dd>
+      ${tables.map(([t, n]) => `<dt>${esc(t)}</dt><dd>${Number(n).toLocaleString()} rows</dd>`).join("")}
+    </dl>`;
+}
+
+function renderAdminUsers() {
+  const q = $("#adm-search").value.trim().toLowerCase();
+  const f = $("#adm-role-filter").value;
+  const list = adm.users.filter((u) => {
+    if (f === "suspended" ? !isSuspended(u) : f !== "all" && u.role !== f) return false;
+    return !q || [u.email, u.display_name, u.username].some((x) => (x || "").toLowerCase().includes(q));
+  });
+  $("#adm-user-count").textContent = `${list.length} of ${adm.users.length}`;
+  const body = $("#adm-users");
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-row">${adm.users.length ? "No one matches that search." : "No people yet."}</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.map((u) => {
+    const me = u.id === user?.id;
+    const url = safeUrl(u.avatar_url);
+    const name = u.display_name || (u.username ? `@${u.username}` : u.email);
+    const status = isSuspended(u) ? '<span class="status suspended">Suspended</span>' : u.last_sign_in_at ? '<span class="status">Active</span>' : '<span class="status pending">Never signed in</span>';
+    const role = isAdmin() && !me
+      ? `<select class="input" data-role="${esc(u.id)}" aria-label="Role for ${esc(u.email)}">${Object.entries(ROLE_LABEL).map(([v, l]) => `<option value="${v}" ${u.role === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
+      : `<span class="role-badge ${esc(u.role)}">${esc(ROLE_LABEL[u.role] || u.role)}</span>`;
+    return `<tr>
+      <td><div class="adm-person"><span class="avatar">${url ? `<img src="${esc(url)}" alt="" />` : esc((name || "?")[0].toUpperCase())}</span><div><b>${esc(name)}${me ? " (you)" : ""}</b><small>${esc(u.email || "")}</small></div></div></td>
+      <td>${role}</td>
+      <td>${status}</td>
+      <td title="${esc(new Date(u.created_at).toLocaleString())}">${esc(fmtWhen(u.created_at))}</td>
+      <td title="${u.last_sign_in_at ? esc(new Date(u.last_sign_in_at).toLocaleString()) : ""}">${esc(fmtWhen(u.last_sign_in_at))}</td>
+      <td><button type="button" class="btn btn-sm" data-manage="${esc(u.id)}">${isAdmin() ? "Manage" : "View"}</button></td>
+    </tr>`;
+  }).join("");
+  $$("[data-manage]", body).forEach((b) => b.addEventListener("click", () => openPerson(b.dataset.manage)));
+  $$("[data-role]", body).forEach((sel) => sel.addEventListener("change", async () => {
+    const u = adm.users.find((x) => x.id === sel.dataset.role);
+    const role = sel.value;
+    if (!confirm(`Make ${u.email} ${role === "admin" ? "an" : "a"} ${ROLE_LABEL[role]}?`)) { sel.value = u.role; return; }
+    sel.disabled = true;
+    try {
+      await adminCall("set_role", { userId: u.id, role });
+      u.role = role;
+      toast("Role updated", `${u.email} is now ${role === "admin" ? "an" : "a"} ${ROLE_LABEL[role]}.`, { type: "success" });
+      refreshAdmin();
+    } catch (err) {
+      sel.value = u.role;
+      toast("Couldn't change role", err.message, { type: "error" });
+    } finally {
+      sel.disabled = false;
+    }
+  }));
+}
+
+async function adminAction(fn, okTitle, okMsg) {
+  try {
+    await fn();
+    toast(okTitle, okMsg || "", { type: "success" });
+    refreshAdmin();
+    return true;
+  } catch (err) {
+    toast("That didn't work", err.message, { type: "error" });
+    return false;
+  }
+}
+
+function openPerson(id) {
+  const u = adm.users.find((x) => x.id === id);
+  if (!u) return;
+  const me = u.id === user?.id;
+  const url = safeUrl(u.avatar_url);
+  $("#dlg-title").textContent = u.display_name || u.email;
+  const body = $("#dlg-body");
+  body.innerHTML = `
+    <div class="profile-head">
+      <span class="avatar lg">${url ? `<img src="${esc(url)}" alt="" />` : esc((u.display_name || u.email || "?")[0].toUpperCase())}</span>
+      <div>
+        <b>${esc(u.email)}</b><br>
+        <span class="role-badge ${esc(u.role)}">${esc(ROLE_LABEL[u.role])}</span>
+        ${isSuspended(u) ? '<span class="status suspended" style="margin-left:.4rem">Suspended</span>' : ""}
+      </div>
+    </div>
+    <dl class="kv">
+      <dt>Display name</dt><dd>${esc(u.display_name || "—")}</dd>
+      <dt>Username</dt><dd>${u.username ? "@" + esc(u.username) : "—"}</dd>
+      <dt>Bio</dt><dd>${esc(u.bio || "—")}</dd>
+      <dt>Genres</dt><dd>${esc((u.favorite_genres || []).join(", ") || "—")}</dd>
+      <dt>Joined</dt><dd>${esc(new Date(u.created_at).toLocaleString())}</dd>
+      <dt>Last sign-in</dt><dd>${u.last_sign_in_at ? esc(new Date(u.last_sign_in_at).toLocaleString()) : "Never"}</dd>
+      <dt>User ID</dt><dd class="mono" style="font-weight:400">${esc(u.id)}</dd>
+    </dl>
+    ${isAdmin() ? `<h4 class="adm-h" style="margin-top:1.2rem">Actions</h4>
+    <div class="adm-actions">
+      <button type="button" class="btn btn-sm" data-a="edit">✏️ Edit profile</button>
+      <button type="button" class="btn btn-sm" data-a="password">🔑 Set password</button>
+      ${me ? "" : `<button type="button" class="btn btn-sm" data-a="ban">${isSuspended(u) ? "✅ Restore access" : "⛔ Suspend"}</button>
+      <button type="button" class="btn btn-sm btn-danger" data-a="delete">🗑 Delete account</button>`}
+    </div>` : '<p class="hint" style="margin-top:1rem">Employees can view people but not change them.</p>'}`;
+  $("#dlg-foot").innerHTML = '<button type="button" class="btn btn-primary" data-close>Done</button>';
+  clearError("#dlg-error");
+  dlgSubmit = () => dlg.close();
+
+  const act = (name, fn) => $(`[data-a=${name}]`, body)?.addEventListener("click", fn);
+  act("edit", () => openForm({
+    title: `Edit ${u.email}`,
+    submitLabel: "Save",
+    fields: [
+      { name: "display_name", label: "Display name", maxLength: 60, value: u.display_name || "" },
+      { name: "username", label: "Username", maxLength: 24, value: u.username || "", help: "3–24 lowercase letters, numbers or _" },
+      { name: "bio", label: "Bio", type: "textarea", rows: 3, maxLength: 280, value: u.bio || "" },
+    ],
+    onSubmit: async (v) => {
+      if (v.username && !/^[a-z0-9_]{3,24}$/.test(v.username)) throw new Error("Usernames need 3–24 lowercase letters, numbers or underscores.");
+      await adminCall("update_profile", { userId: u.id, display_name: v.display_name || "", username: v.username || "", bio: v.bio || "" });
+      toast("Profile updated", u.email, { type: "success" });
+      refreshAdmin();
+    },
+  }));
+  act("password", () => openForm({
+    title: `Set a password for ${u.email}`,
+    intro: "They can then sign in with “Have a password? Sign in with it” on the sign-in screen. Email codes keep working too.",
+    submitLabel: "Set password",
+    fields: [
+      { name: "password", label: "New password", type: "password", required: true, minLength: 8, help: "8–72 characters" },
+      { name: "confirm", label: "Confirm password", type: "password", required: true },
+    ],
+    onSubmit: async (v) => {
+      if (v.password.length < 8) throw new Error("Passwords must be at least 8 characters.");
+      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+      await adminCall("set_password", { userId: u.id, password: v.password });
+      toast("Password set 🔑", `Let ${u.email} know their new password.`, { type: "success" });
+      refreshAdmin();
+    },
+  }));
+  act("ban", async () => {
+    const banned = !isSuspended(u);
+    if (!confirm(banned ? `Suspend ${u.email}? They won't be able to sign in until restored.` : `Restore access for ${u.email}?`)) return;
+    if (await adminAction(() => adminCall("set_banned", { userId: u.id, banned }), banned ? "Account suspended" : "Access restored", u.email)) dlg.close();
+  });
+  act("delete", async () => {
+    const typed = prompt(`This permanently deletes ${u.email} and their profile. Type DELETE to confirm.`);
+    if (typed !== "DELETE") return;
+    if (await adminAction(() => adminCall("delete_user", { userId: u.id }), "Account deleted", u.email)) dlg.close();
+  });
+  if (!dlg.open) dlg.showModal();
+}
+
+function addPerson() {
+  openForm({
+    title: "Add a person",
+    intro: "They can sign in right away with their email (we'll send a code when they try). Add a password only if they need one.",
+    submitLabel: "Add person",
+    fields: [
+      { name: "email", label: "Email", type: "email", required: true, placeholder: "name@example.com" },
+      { name: "role", label: "Role", type: "select", value: "user", options: Object.entries(ROLE_LABEL).map(([v, l]) => [v, l]) },
+      { name: "password", label: "Password", type: "password", help: "Optional · 8–72 characters" },
+    ],
+    onSubmit: async (v) => {
+      await adminCall("create_user", { email: v.email, role: v.role || "user", password: v.password || undefined });
+      toast("Person added", `${v.email} · ${ROLE_LABEL[v.role || "user"]}`, { type: "success" });
+      refreshAdmin();
+    },
+  });
+}
+
+function initAdmin() {
+  $("#adm-refresh").addEventListener("click", refreshAdmin);
+  $("#adm-auto").addEventListener("change", (e) => setAutoRefresh(e.target.checked));
+  $("#adm-search").addEventListener("input", renderAdminUsers);
+  $("#adm-role-filter").addEventListener("change", renderAdminUsers);
+  $("#adm-add").addEventListener("click", addPerson);
+}
+
+/* =========================================================
    Key gate
    ========================================================= */
 // The Suno key is stored per signed-in account.
@@ -609,15 +1050,18 @@ async function refreshCredits() {
 /* =========================================================
    Routing
    ========================================================= */
-const TABS = ["create", "lyrics", "remix", "sounds", "library"];
+const TABS = ["create", "lyrics", "remix", "sounds", "library", "admin"];
 function route() {
   const tab = (location.hash || "#create").slice(1);
-  const active = TABS.includes(tab) ? tab : "create";
+  let active = TABS.includes(tab) ? tab : "create";
+  if (active === "admin" && !isStaff()) active = "create";
   $$("[data-view]").forEach((v) => (v.hidden = v.dataset.view !== active));
   $$(".tabs a").forEach((a) => a.setAttribute("aria-selected", String(a.dataset.tab === active)));
   if (active === "library") renderLibrary();
   if (active === "lyrics") renderLyrics();
   if (active === "remix") refreshLibraryPickers();
+  if (active === "admin") enterAdmin();
+  else leaveAdmin();
 }
 window.addEventListener("hashchange", route);
 const go = (tab) => { if (location.hash !== "#" + tab) location.hash = tab; else route(); };
@@ -644,6 +1088,7 @@ const FAIL_TEXT = {
 };
 
 function addJob(job) {
+  logEvent(job.kind === "music" ? job.meta?.source || "song" : job.kind, { op: job.meta?.op || null, model: job.meta?.model || null });
   const j = { status: "running", stage: 0, createdAt: Date.now(), updatedAt: Date.now(), fails: 0, nextAt: Date.now() + 2500, meta: {}, ...job };
   state.jobs.unshift(j);
   save();
@@ -652,6 +1097,9 @@ function addJob(job) {
   return j;
 }
 function updateJob(job, patch) {
+  if (patch.status === "failed" && job.status !== "failed") {
+    logEvent("failed", { kind: job.kind, op: job.meta?.op || null, error: String(patch.error || "").slice(0, 200) });
+  }
   Object.assign(job, patch, { updatedAt: Date.now() });
   save();
   renderJobs();
@@ -2545,6 +2993,7 @@ function boot() {
   initPlayer();
   renderJobs();
   initLogin();
+  initAdmin();
   initAuth();
 }
 

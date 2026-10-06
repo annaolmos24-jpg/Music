@@ -47,12 +47,17 @@
       <form id="login-form" class="gate-form" novalidate hidden>
         <label for="login-email" class="label">Email</label>
         <input id="login-email" type="email" class="input" autocomplete="email" placeholder="you@example.com" required />
+        <div id="pw-field" hidden>
+          <label for="login-password" class="label" style="margin-top:.8rem">Password</label>
+          <input id="login-password" type="password" class="input" autocomplete="current-password" placeholder="Your password" />
+        </div>
         <p id="login-error" class="form-error" role="alert" hidden></p>
         <button type="submit" class="btn btn-primary btn-lg btn-block" id="login-submit" style="margin-top:.8rem">
           <span class="btn-label">Email me a sign-in code</span>
           <span class="spinner" aria-hidden="true"></span>
         </button>
-        <p class="fine">No password needed — we'll email you a one-time code.</p>
+        <p class="fine" id="login-fine">No password needed — we'll email you a one-time code.</p>
+        <p class="fine"><button type="button" class="link-btn" id="pw-toggle">Have a password? Sign in with it</button></p>
       </form>
 
       <div id="login-sent" class="login-sent" hidden>
@@ -111,6 +116,7 @@
         <a href="#remix" role="tab" data-tab="remix"><svg viewBox="0 0 24 24"><path d="M7 7h10l-3-3 1.4-1.4L21 8l-5.6 5.4L14 12l3-3H7zm10 10H7l3 3-1.4 1.4L3 16l5.6-5.4L10 12l-3 3h10z"/></svg><span>Remix</span></a>
         <a href="#sounds" role="tab" data-tab="sounds"><svg viewBox="0 0 24 24"><path d="M3 10h2v4H3zm4-3h2v10H7zm4-4h2v18h-2zm4 4h2v10h-2zm4 3h2v4h-2z"/></svg><span>Sounds</span></a>
         <a href="#library" role="tab" data-tab="library"><svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zm6 0h4v16h-4zm5.6.6 3.8-1.3 5 15-3.8 1.3z"/></svg><span>Library</span><em class="count" id="lib-count">0</em></a>
+        <a href="#admin" role="tab" data-tab="admin" id="admin-tab" hidden><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5zm-1 14-4-4 1.4-1.4L11 13.2l4.6-4.6L17 10z"/></svg><span>Admin</span></a>
       </nav>
       <div class="topbar-right">
         <button class="pill credits" id="credits-btn" title="Remaining credits — click to refresh">
@@ -409,6 +415,73 @@
           <h3>No tracks yet</h3>
           <p class="muted">Your first song is about a minute away.</p>
           <a href="#create" class="btn btn-primary">Create a song</a>
+        </div>
+      </section>
+
+      <!-- ============ ADMIN ============ -->
+      <section class="view" id="view-admin" data-view="admin" hidden>
+        <div class="view-head">
+          <div>
+            <h2>Admin console</h2>
+            <p class="muted" id="adm-sub">Manage people and roles, and keep an eye on the site.</p>
+          </div>
+          <div class="adm-tools">
+            <span class="role-badge" id="adm-role"></span>
+            <label class="toggle toggle-inline"><input type="checkbox" id="adm-auto" /><span class="toggle-ui" aria-hidden="true"></span><span><b>Auto-refresh</b></span></label>
+            <button type="button" class="btn" id="adm-refresh"><span class="btn-label">↻ Refresh</span><span class="spinner" aria-hidden="true"></span></button>
+          </div>
+        </div>
+        <p class="form-error" id="adm-error" role="alert" hidden></p>
+        <h3 class="adm-h">Site health <small id="adm-checked"></small></h3>
+        <div class="adm-status" id="adm-status"></div>
+        <div class="adm-tiles" id="adm-tiles"></div>
+
+        <div class="card adm-card">
+          <div class="adm-card-head">
+            <h3>People <small id="adm-user-count"></small></h3>
+            <div class="adm-filters">
+              <input type="search" class="input" id="adm-search" placeholder="Search name, email or username…" />
+              <select class="input" id="adm-role-filter">
+                <option value="all">All roles</option>
+                <option value="admin">Administrators</option>
+                <option value="employee">Employees</option>
+                <option value="user">Users</option>
+                <option value="suspended">Suspended</option>
+              </select>
+              <button type="button" class="btn btn-primary btn-sm" id="adm-add" data-admin-only>+ Add person</button>
+            </div>
+          </div>
+          <div class="adm-table-wrap">
+            <table class="adm-table">
+              <thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Joined</th><th>Last sign-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+              <tbody id="adm-users"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="adm-grid">
+          <div class="card adm-card">
+            <div class="adm-card-head"><h3>Recent activity</h3></div>
+            <div id="adm-activity" class="adm-feed"></div>
+          </div>
+          <div class="card adm-card">
+            <div class="adm-card-head"><h3>Database</h3></div>
+            <div id="adm-db"></div>
+          </div>
+        </div>
+
+        <div class="card adm-card" data-admin-only>
+          <div class="adm-card-head"><h3>Admin history</h3><small class="muted">Every change made from this console</small></div>
+          <div id="adm-audit" class="adm-feed"></div>
+        </div>
+
+        <div class="card adm-card">
+          <div class="adm-card-head"><h3>What each role can do</h3></div>
+          <div class="adm-roles">
+            <div><span class="role-badge admin">Administrator</span><p>Everything: sees all people and site health, changes roles, sets passwords, adds, suspends and deletes accounts, edits profiles, reads the admin history.</p></div>
+            <div><span class="role-badge employee">Employee</span><p>Read-only console: sees all people, site health, activity and database status. Can't change anything.</p></div>
+            <div><span class="role-badge user">User</span><p>Uses the studio and manages their own profile. No admin access.</p></div>
+          </div>
         </div>
       </section>
     </main>
