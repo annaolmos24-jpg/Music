@@ -1,4 +1,5 @@
 import { searchFoods, lookupBarcode } from "./api.js";
+import { PLANS, FACTS, TIPS as LEARN_TIPS, MYTHS } from "./learn.js";
 
 /* ---------- Constants & state ---------- */
 const STORE_KEY = "nourish.v1";
@@ -38,6 +39,7 @@ const DEFAULTS = {
   name: "Oriana",
   goals: { kcal: 2000, protein: 110, carbs: 225, fat: 65, fiber: 30, water: 8 },
   unit: "lb",
+  profile: { sex: "female", age: null, heightCm: null, weightKg: null, activity: 1.375 },
   days: {},
   weights: [],
   recents: [],
@@ -47,6 +49,7 @@ let state = load();
 let currentDate = dateKey(new Date());
 let selectedMeal = defaultMeal();
 let chartRange = 7;
+let selectedPlan = "balanced";
 let searchCtrl = null;
 let lastResults = [];
 let portionFood = null;
@@ -91,7 +94,7 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY));
     if (raw && typeof raw === "object") {
-      return { ...DEFAULTS, ...raw, goals: { ...DEFAULTS.goals, ...raw.goals } };
+      return { ...DEFAULTS, ...raw, goals: { ...DEFAULTS.goals, ...raw.goals }, profile: { ...DEFAULTS.profile, ...raw.profile } };
     }
   } catch {}
   return structuredClone(DEFAULTS);
@@ -162,7 +165,7 @@ function greetingCard() {
     <article class="card hero">
       <h1>${greetingWord()}${name ? `, ${esc(name)}` : ""}! <span class="wave" aria-hidden="true">👋</span></h1>
       <p>${esc(line)}</p>
-      <div class="tip">💡 ${esc(dailyTip())}</div>
+      <div class="tip">💡 ${esc(dailyTip())} <a href="#learn" class="tip-link">More tips &amp; meal plans →</a></div>
     </article>`;
 }
 
@@ -692,6 +695,243 @@ function renderProgress() {
   });
 }
 
+/* ---------- Learn view ---------- */
+const ACTIVITY = [
+  [1.2, "Sedentary (little exercise)"],
+  [1.375, "Lightly active (1–3 workouts/week)"],
+  [1.55, "Moderately active (3–5/week)"],
+  [1.725, "Very active (6–7/week)"],
+  [1.9, "Athlete / physical job"],
+];
+
+function planTotals(plan, mealId) {
+  const items = mealId ? plan.meals[mealId] : Object.values(plan.meals).flat();
+  return items.reduce((t, [, kcal, p, c, f]) => ({ kcal: t.kcal + kcal, protein: t.protein + p, carbs: t.carbs + c, fat: t.fat + f }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+}
+
+function factOfTheDay() {
+  const start = new Date(new Date().getFullYear(), 0, 0);
+  return FACTS[Math.floor((new Date() - start) / 86400000) % FACTS.length];
+}
+
+function calcResults() {
+  const p = state.profile;
+  const latest = [...state.weights].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+  const kg = p.weightKg || latest?.kg;
+  if (!(p.age > 0 && p.heightCm > 0 && kg > 0)) return null;
+  // Mifflin-St Jeor resting energy, times activity factor.
+  const bmr = 10 * kg + 6.25 * p.heightCm - 5 * p.age + (p.sex === "male" ? 5 : -161);
+  const tdee = bmr * p.activity;
+  const floor = p.sex === "male" ? 1500 : 1200;
+  const bmi = kg / (p.heightCm / 100) ** 2;
+  const bmiLabel = bmi < 18.5 ? "underweight" : bmi < 25 ? "healthy range" : bmi < 30 ? "overweight" : "obese range";
+  const target = Math.max(Math.round((tdee - 500) / 10) * 10, floor);
+  const protein = Math.round(kg * 1.4);
+  const fat = Math.round((target * 0.3) / 9);
+  const carbs = Math.max(Math.round((target - protein * 4 - fat * 9) / 4), 0);
+  return {
+    bmr, tdee, bmi, bmiLabel, floor, kg,
+    options: [
+      { label: "Maintain", kcal: tdee },
+      { label: "Lose ~0.5 lb / week", kcal: Math.max(tdee - 250, floor) },
+      { label: "Lose ~1 lb / week", kcal: Math.max(tdee - 500, floor) },
+    ],
+    goals: { kcal: target, protein, carbs, fat, fiber: Math.round((target / 1000) * 14) },
+  };
+}
+
+function renderCalcResults() {
+  const el = $("#calcResults");
+  if (!el) return;
+  const r = calcResults();
+  if (!r) {
+    el.innerHTML = `<p class="empty">Fill in your age, height and weight to see your numbers.</p>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="grid four calc-grid">
+      ${r.options.map((o) => `<div class="stat-mini"><span>${o.label}</span><strong>${fmt(Math.round(o.kcal / 10) * 10)}</strong><small>kcal / day</small></div>`).join("")}
+      <div class="stat-mini"><span>BMI</span><strong>${fmt(r.bmi, 1)}</strong><small>${r.bmiLabel}</small></div>
+    </div>
+    <p class="small muted">Suggested daily goals for steady loss: <b>${fmt(r.goals.kcal)} kcal</b>, ${r.goals.protein} g protein, ${r.goals.carbs} g carbs, ${r.goals.fat} g fat, ${r.goals.fiber} g fiber.
+      ${r.goals.kcal === r.floor ? `We don't suggest going below ${fmt(r.floor)} kcal without medical supervision.` : ""}</p>
+    <div class="row">
+      <button class="btn primary" type="button" data-action="apply-calc">Use these as my goals</button>
+      <span class="small muted">BMI is a screening tool. It doesn't account for muscle, age or body shape.</span>
+    </div>`;
+}
+
+function renderLearn() {
+  const plan = PLANS.find((p) => p.id === selectedPlan) || PLANS[0];
+  const pt = planTotals(plan);
+  const prof = state.profile;
+  const metric = state.unit === "kg";
+  const latest = [...state.weights].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+  const kg = prof.weightKg || latest?.kg;
+  const ft = prof.heightCm ? Math.floor(prof.heightCm / 30.48) : "";
+  const inch = prof.heightCm ? Math.round((prof.heightCm / 2.54) % 12) : "";
+  const fact = factOfTheDay();
+
+  $("#view-learn").innerHTML = `
+    <div>
+      <h1 style="font-size:1.4rem">Learn &amp; plan</h1>
+      <p class="muted">Weight-loss basics, ready-made meal plans, food facts and everyday tips.</p>
+    </div>
+    <div class="chips jump-nav" role="navigation" aria-label="Learn sections">
+      ${[["calc", "🧮 Calorie calculator"], ["plans", "🥗 Meal plans"], ["plate", "🍽️ Healthy plate"], ["facts", "🔎 Food facts"], ["tips", "💡 Tips"], ["myths", "❓ Myths vs. facts"]]
+        .map(([id, label]) => `<button class="chip" data-action="jump" data-target="learn-${id}">${label}</button>`).join("")}
+    </div>
+
+    <article class="card fact-day">
+      <div class="fact-emoji" aria-hidden="true">${fact.emoji}</div>
+      <div><div class="small muted"><b>Food fact of the day</b></div><h2>${esc(fact.title)}</h2><p>${esc(fact.text)}</p></div>
+    </article>
+
+    <article class="card stack" id="learn-calc">
+      <div>
+        <h2>🧮 How many calories do I need?</h2>
+        <p class="muted small">Your body burns energy at rest (BMR) plus through daily activity. Eating a little less than that total creates the deficit that leads to fat loss. This uses the Mifflin-St Jeor equation, the one most dietitians use.</p>
+      </div>
+      <form id="calcForm" class="form-grid">
+        <div class="field"><label for="c-sex">Sex</label>
+          <select id="c-sex"><option value="female" ${prof.sex !== "male" ? "selected" : ""}>Female</option><option value="male" ${prof.sex === "male" ? "selected" : ""}>Male</option></select></div>
+        <div class="field"><label for="c-age">Age</label><input id="c-age" type="number" min="15" max="100" inputmode="numeric" value="${prof.age || ""}" /></div>
+        ${metric
+          ? `<div class="field"><label for="c-cm">Height (cm)</label><input id="c-cm" type="number" min="100" max="250" inputmode="decimal" value="${prof.heightCm ? Math.round(prof.heightCm) : ""}" /></div>`
+          : `<div class="field"><label for="c-ft">Height (ft)</label><input id="c-ft" type="number" min="3" max="8" inputmode="numeric" value="${ft}" /></div>
+             <div class="field"><label for="c-in">(in)</label><input id="c-in" type="number" min="0" max="11" inputmode="numeric" value="${inch}" /></div>`}
+        <div class="field"><label for="c-w">Weight (${state.unit})</label><input id="c-w" type="number" min="50" step="0.1" inputmode="decimal" value="${kg ? fmt(weightDisplay(kg), 1).replace(/,/g, "") : ""}" /></div>
+        <div class="field" style="grid-column: span 2"><label for="c-act">Activity</label>
+          <select id="c-act">${ACTIVITY.map(([v, l]) => `<option value="${v}" ${prof.activity === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      </form>
+      <div id="calcResults"></div>
+    </article>
+
+    <article class="card stack" id="learn-plans">
+      <div>
+        <h2>🥗 Meal plan templates</h2>
+        <p class="muted small">One-day templates you can repeat or mix and match. Tap <b>Add</b> to log a meal to today, or add the whole day at once. Adjust portions to fit your calorie goal.</p>
+      </div>
+      <div class="chips" role="group" aria-label="Choose a plan">
+        ${PLANS.map((p) => `<button class="chip ${p.id === plan.id ? "active" : ""}" data-action="plan" data-id="${p.id}" aria-pressed="${p.id === plan.id}">${p.emoji} ${p.name}</button>`).join("")}
+      </div>
+      <div class="plan-head">
+        <div>
+          <h3>${plan.emoji} ${esc(plan.name)} · ~${fmt(Math.round(pt.kcal / 10) * 10)} kcal</h3>
+          <p class="small muted">${esc(plan.summary)}</p>
+          <p class="small chip-dots" style="margin-top:6px">
+            <span style="--c:var(--protein)">${pt.protein} g protein</span>
+            <span style="--c:var(--carbs)">${pt.carbs} g carbs</span>
+            <span style="--c:var(--fat)">${pt.fat} g fat</span>
+          </p>
+        </div>
+        <button class="btn primary" data-action="add-plan-day">＋ Add whole day</button>
+      </div>
+      <div class="grid two">
+        ${MEALS.map((m) => {
+          const t = planTotals(plan, m.id);
+          return `
+          <div class="plan-meal">
+            <div class="card-head" style="margin-bottom:6px">
+              <h3>${m.icon} ${m.label} <span class="muted small">${fmt(t.kcal)} kcal</span></h3>
+              <button class="btn small" data-action="add-plan-meal" data-meal="${m.id}">＋ Add</button>
+            </div>
+            <ul class="plan-items">${plan.meals[m.id].map(([n, kcal, p]) => `<li><span>${esc(n)}</span><span class="muted">${kcal} kcal · ${p} g P</span></li>`).join("")}</ul>
+          </div>`;
+        }).join("")}
+      </div>
+      <details class="shopping">
+        <summary>🛒 Shopping list for this plan</summary>
+        <ul>${plan.shopping.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>
+      </details>
+    </article>
+
+    <article class="card plate-card" id="learn-plate">
+      <svg viewBox="0 0 200 200" class="plate" role="img" aria-label="Healthy plate: half vegetables, a quarter protein, a quarter whole grains">
+        <circle cx="100" cy="100" r="96" fill="var(--surface-2)" stroke="var(--border)" stroke-width="2"/>
+        <path d="M100 100 L100 14 A86 86 0 0 0 100 186 Z" fill="color-mix(in srgb, var(--accent) 70%, transparent)"/>
+        <path d="M100 100 L100 14 A86 86 0 0 1 186 100 Z" fill="color-mix(in srgb, var(--protein) 70%, transparent)"/>
+        <path d="M100 100 L186 100 A86 86 0 0 1 100 186 Z" fill="color-mix(in srgb, var(--carbs) 70%, transparent)"/>
+        <text x="55" y="104" text-anchor="middle" class="plate-label">Veggies</text>
+        <text x="138" y="66" text-anchor="middle" class="plate-label">Protein</text>
+        <text x="138" y="144" text-anchor="middle" class="plate-label">Grains</text>
+      </svg>
+      <div class="stack" style="gap:8px">
+        <h2>🍽️ The healthy plate</h2>
+        <p>An easy way to build balanced meals without counting every calorie:</p>
+        <ul class="plain-list">
+          <li><b>½ vegetables & fruit</b>: leafy greens, peppers, broccoli, berries. High volume, low calories.</li>
+          <li><b>¼ lean protein</b>: chicken, fish, eggs, tofu, beans, Greek yogurt.</li>
+          <li><b>¼ whole grains or starch</b>: brown rice, quinoa, oats, potatoes, whole-wheat pasta.</li>
+          <li><b>A thumb of healthy fat</b>: olive oil, avocado, nuts or seeds.</li>
+          <li><b>Water</b> as your main drink.</li>
+        </ul>
+      </div>
+    </article>
+
+    <section class="stack" id="learn-facts">
+      <h2>🔎 Food facts</h2>
+      <div class="facts">
+        ${FACTS.map((f) => `<article class="card fact"><div class="fact-emoji" aria-hidden="true">${f.emoji}</div><div><h3>${esc(f.title)}</h3><p class="small">${esc(f.text)}</p></div></article>`).join("")}
+      </div>
+    </section>
+
+    <section class="stack" id="learn-tips">
+      <h2>💡 Tips that work</h2>
+      <div class="grid two">
+        ${LEARN_TIPS.map((t) => `
+          <article class="card">
+            <h3 style="margin-bottom:8px">${t.emoji} ${esc(t.title)}</h3>
+            <ul class="check-list">${t.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>
+          </article>`).join("")}
+      </div>
+    </section>
+
+    <section class="stack" id="learn-myths">
+      <h2>❓ Myths vs. facts</h2>
+      <div class="stack">
+        ${MYTHS.map((m) => `
+          <details class="card myth">
+            <summary><span class="myth-tag">Myth</span> ${esc(m.myth)}</summary>
+            <p><span class="fact-tag">Fact</span> ${esc(m.fact)}</p>
+          </details>`).join("")}
+      </div>
+    </section>
+
+    <p class="muted small">This information is general education, not medical advice. If you're pregnant, managing a health condition, or taking medication, check with your doctor or a registered dietitian before changing your diet. Nutrition values are approximate.</p>`;
+
+  const readCalc = () => {
+    const p = state.profile;
+    p.sex = $("#c-sex").value;
+    p.age = parseFloat($("#c-age").value) || null;
+    p.heightCm = metric
+      ? parseFloat($("#c-cm").value) || null
+      : ((parseFloat($("#c-ft").value) || 0) * 12 + (parseFloat($("#c-in").value) || 0)) * 2.54 || null;
+    const w = parseFloat($("#c-w").value);
+    p.weightKg = w > 0 ? weightToKg(w) : null;
+    p.activity = parseFloat($("#c-act").value);
+    save();
+    renderCalcResults();
+  };
+  $("#calcForm").addEventListener("input", readCalc);
+  $("#calcForm").addEventListener("submit", (e) => e.preventDefault());
+  renderCalcResults();
+}
+
+function addPlanMeals(mealIds) {
+  const plan = PLANS.find((p) => p.id === selectedPlan) || PLANS[0];
+  const d = day(currentDate);
+  let count = 0;
+  for (const meal of mealIds) {
+    for (const [name, kcal, protein, carbs, fat] of plan.meals[meal]) {
+      d.entries.push({ id: uid(), meal, time: Date.now(), name, brand: `${plan.name} plan`, grams: null, kcal, protein, carbs, fat, fiber: 0, sugar: 0, sodium: 0 });
+      count++;
+    }
+  }
+  save();
+  toast(mealIds.length > 1 ? `Added the ${plan.name} day (${count} items) ✓` : `Added ${plan.name} ${mealLabel(mealIds[0]).toLowerCase()} ✓`);
+}
+
 /* ---------- Settings view ---------- */
 function renderSettings() {
   const g = state.goals;
@@ -755,7 +995,7 @@ function renderSettings() {
     try {
       const data = JSON.parse(await file.text());
       if (!data || typeof data !== "object" || !data.days) throw new Error("Not a Nourish backup");
-      state = { ...DEFAULTS, ...data, goals: { ...DEFAULTS.goals, ...data.goals } };
+      state = { ...DEFAULTS, ...data, goals: { ...DEFAULTS.goals, ...data.goals }, profile: { ...DEFAULTS.profile, ...data.profile } };
       save();
       renderSettings();
       toast("Backup imported ✓");
@@ -766,13 +1006,14 @@ function renderSettings() {
 }
 
 /* ---------- Routing ---------- */
-const VIEWS = ["today", "add", "progress", "settings"];
+const VIEWS = ["today", "add", "learn", "progress", "settings"];
 function route() {
   const name = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "today";
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== name;
   $$(".tabs a").forEach((a) => (a.dataset.tab === name ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   if (name === "today") renderToday();
   if (name === "add") { syncAddView(); }
+  if (name === "learn") renderLearn();
   if (name === "progress") renderProgress();
   if (name === "settings") renderSettings();
   window.scrollTo({ top: 0 });
@@ -821,6 +1062,21 @@ document.addEventListener("click", (e) => {
     case "close-portion": $("#portionDialog").close(); break;
     case "scan": startScan(); break;
     case "close-scan": stopScan(); break;
+    case "jump": document.getElementById(el.dataset.target)?.scrollIntoView({ behavior: "smooth", block: "start" }); break;
+    case "plan": selectedPlan = el.dataset.id; renderLearn(); document.getElementById("learn-plans")?.scrollIntoView({ block: "start" }); break;
+    case "add-plan-meal": addPlanMeals([el.dataset.meal]); break;
+    case "add-plan-day": addPlanMeals(MEALS.map((m) => m.id)); break;
+    case "apply-calc": {
+      const r = calcResults();
+      if (!r) break;
+      Object.assign(state.goals, r.goals);
+      if (r.kg && !state.weights.some((w) => w.date === dateKey(new Date()))) {
+        state.weights.push({ date: dateKey(new Date()), kg: Math.round(r.kg * 100) / 100 });
+      }
+      save();
+      toast(`Goals updated: ${fmt(r.goals.kcal)} kcal a day ✓`);
+      break;
+    }
     case "range": chartRange = Number(el.dataset.n); renderProgress(); break;
     case "delete-weight":
       state.weights = state.weights.filter((w) => w.date !== el.dataset.date);
