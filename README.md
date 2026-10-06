@@ -35,3 +35,9 @@ npx serve public       # the app falls back to calling the API directly
 
 - Suno keeps generated files for 14 days and file uploads for 3 days. Download anything you want to keep.
 - Your library, personas and lyric drafts are stored in `localStorage`. You can export or import them from Settings.
+
+---
+
+## Also in this repo: Nourish (nutrition & wellness tracker)
+
+The [`nutrition/`](nutrition/) folder holds a separate app: a meal, macro, water and weight tracker that uses live Open Food Facts data (free, no key). To deploy it on its own Netlify site, set **Base directory** to `nutrition`. See [`nutrition/README.md`](nutrition/README.md).
