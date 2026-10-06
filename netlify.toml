@@ -1,8 +1,26 @@
+# Site layout:
+#   /        -> Nourish, the nutrition & wellness tracker (nutrition/public)
+#   /music/  -> Tunesmith Studio, the music app (public)
+# The build just copies both folders into dist/. No install step is needed.
 [build]
-  publish = "public"
+  command = "rm -rf dist && mkdir -p dist && cp -R nutrition/public/. dist/ && cp -R public dist/music"
+  publish = "dist"
   functions = "netlify/functions"
 
-# Same-origin proxy to the Suno API so the browser never hits CORS limits.
+# Nourish: same-origin proxies to Open Food Facts (free, no key).
+[[redirects]]
+  from = "/off-search/*"
+  to = "https://search.openfoodfacts.org/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/off/*"
+  to = "https://world.openfoodfacts.org/:splat"
+  status = 200
+  force = true
+
+# Tunesmith: same-origin proxy to the Suno API so the browser never hits CORS limits.
 # The user's API key travels in the Authorization header and is forwarded as-is.
 [[redirects]]
   from = "/suno-api/*"
@@ -10,14 +28,14 @@
   status = 200
   force = true
 
-# Same-origin proxy to the Suno File Upload API.
+# Tunesmith: same-origin proxy to the Suno File Upload API.
 [[redirects]]
   from = "/suno-upload/*"
   to = "https://sunoapiorg.redpandaai.co/:splat"
   status = 200
   force = true
 
-# Friendly callback endpoint that Suno can POST task results to.
+# Tunesmith: callback endpoint that Suno can POST task results to.
 # The app polls for results, so this just acknowledges the call.
 [[redirects]]
   from = "/callback"
@@ -31,4 +49,5 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     X-Frame-Options = "DENY"
-    Permissions-Policy = "camera=(), geolocation=()"
+    # Camera is allowed on this site only, for Nourish's barcode scanner.
+    Permissions-Policy = "camera=(self), geolocation=(), microphone=()"

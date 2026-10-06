@@ -40,4 +40,6 @@ npx serve public       # the app falls back to calling the API directly
 
 ## Also in this repo: Nourish (nutrition & wellness tracker)
 
-The [`nutrition/`](nutrition/) folder holds a separate app: a meal, macro, water and weight tracker that uses live Open Food Facts data (free, no key). To deploy it on its own Netlify site, set **Base directory** to `nutrition`. See [`nutrition/README.md`](nutrition/README.md).
+The [`nutrition/`](nutrition/) folder holds Nourish, a meal, macro, water and weight tracker that uses live Open Food Facts data (free, no key). See [`nutrition/README.md`](nutrition/README.md).
+
+**Netlify layout:** the root `netlify.toml` serves **Nourish at `/`** and **Tunesmith at `/music/`** from a single site. No Netlify settings need changing; leave *Base directory* empty.
